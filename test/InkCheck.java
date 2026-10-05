@@ -1,0 +1,226 @@
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Graphics2D;
+import java.awt.image.BufferedImage;
+import java.util.ArrayList;
+import java.util.List;
+import javax.swing.JLabel;
+import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
+
+/**
+ * Kiem tra CHU THUC SU DUOC VE tren man hinh.
+ *
+ * <p><b>Vi sao can:</b> kich thuoc component khong chung minh duoc chu co hien.
+ * Mot vien bo nho co the to de mat chu ma van giu nguyen kich thuoc dung — day
+ * chinh la loai bug da gap o {@code FlatButton} va {@code FocusBorder}.
+ *
+ * <p><b>Cach do:</b> ve rieng component vao anh, chi dem pixel <b>khac mau nen o
+ * phan noi</b>, bo qua 3px sats vien. Vien chi nam o mep nen khong anh huong; con
+ * chu luon nam ben trong va tao pixel tuong phan manh. Component bi to nen se co
+ * dung 0 pixel mau chu.
+ *
+ * <p>Chay: {@code InkCheck <FrameClass> <width> <height> [login]}
+ */
+public class InkCheck {
+
+    private static final int INSET = 3;
+    private static final int THRESH = 60;
+    static int problems = 0;
+
+    public static void main(String[] args) {
+        // Luon System.exit o finally: mot JFrame dang hien giu AWT event thread
+        // nen JVM khong tu dung neu chuong trinh nem loi gi do.
+        try {
+            run(args);
+        } catch (Exception e) {
+            problems++;
+            System.out.println("!! LOI: " + e);
+            e.printStackTrace(System.out);
+        }
+        System.exit(problems == 0 ? 0 : 1);
+    }
+
+    static void run(String[] a) throws Exception {
+        String cls = a[0];
+        int w = Integer.parseInt(a[1]);
+        int h = Integer.parseInt(a[2]);
+        boolean login = a.length > 3 && a[3].equals("login");
+
+        System.out.println("Look and feel: "
+                + UIManager.getLookAndFeel().getClass().getName());
+
+        final javax.swing.JFrame[] box = {null};
+        SwingUtilities.invokeAndWait(() -> {
+            try {
+                UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+            } catch (Exception ignored) {
+                // giu LAF mac dinh
+            }
+            try {
+                box[0] = (javax.swing.JFrame) Class.forName(cls)
+                        .getDeclaredConstructor().newInstance();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+            box[0].setSize(w, h);
+            box[0].setVisible(true);
+        });
+        Thread.sleep(1200);
+
+        fillInitial(box[0]);
+        Thread.sleep(400);
+
+        if (login) {
+            int port = 24601;
+            MailServer server = GuiHelper.startServer(port, "/tmp/ink_data");
+            try {
+                MailClient c = new MailClient("localhost", port);
+                c.register("hung01", "matkhau123");
+                c.send("nguoinhan", "hung01", "Chu de thu",
+                        "Dong mot\nDong hai\nDong ba");
+                SwingUtilities.invokeAndWait(() -> {
+                    GuiHelper.setText(box[0], "hostField", "localhost");
+                    GuiHelper.setText(box[0], "portField", String.valueOf(port));
+                });
+                GuiHelper.login((MailClientFrame) box[0], "hung01", "matkhau123", port);
+                // Nap san noi dung tab Doc thu de kiem tra ca vung nhay.
+                SwingUtilities.invokeAndWait(() -> {
+                    GuiHelper.setLabel(box[0], "readFileName", "mail_0001.txt");
+                    GuiHelper.setLabel(box[0], "readFrom", "hung01@mailserver.local");
+                    GuiHelper.setLabel(box[0], "readTo", "hung01@mailserver.local");
+                    GuiHelper.setLabel(box[0], "readSubject", "Chu de thu");
+                    GuiHelper.setLabel(box[0], "readDate", "Sun, 04 Oct 2026 21:14:02 +0700");
+                    GuiHelper.setArea(box[0], "readBody", "Dong mot\nDong hai\nDong ba");
+                });
+                System.out.println("  (da dang nhap: kiem ca 4 tab + hop thu)");
+            } finally {
+                server.shutdown();
+            }
+        }
+
+        final List<Component> all = new ArrayList<>();
+        SwingUtilities.invokeAndWait(() ->
+                GuiHelper.collect(box[0].getContentPane(), all));
+
+        int checked = 0;
+        for (Component c : all) {
+            if (c.getWidth() <= INSET * 2 || c.getHeight() <= INSET * 2) continue;
+            String what = describe(c);
+            if (what == null) continue;
+            checked++;
+
+            int ink = countInteriorInk(c);
+            String verdict;
+            if (ink == 0) {
+                verdict = "!! 0 pixel - CHI BI TO MAU, CHU KHONG HIEN";
+                problems++;
+            } else if (ink < 12) {
+                verdict = "!! rat mo (" + ink + " pixel)";
+                problems++;
+            } else {
+                verdict = "ok (" + ink + " pixel)";
+            }
+            System.out.printf("  %-44s %4dx%-4d %s%s%n", what, c.getWidth(),
+                    c.getHeight(), verdict, c.isShowing() ? "" : "  [an]");
+        }
+
+        System.out.println("Da kiem tra " + checked + " component.");
+        System.out.println(problems == 0
+                ? "=> MOI CHU DEU THUC SU HIEN TREN MAN HINH"
+                : "=> " + problems + " COMPONENT BI LO CHU");
+    }
+
+    /** Dien san cac truong o client; server frame khong co truong nen bo qua. */
+    static void fillInitial(javax.swing.JFrame f) throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            GuiHelper.setText(f, "hostField", "localhost");
+            GuiHelper.setText(f, "portField", "2346");
+            GuiHelper.setText(f, "regUserField", "hung01");
+            GuiHelper.setText(f, "regPassField", "matkhau123");
+            GuiHelper.setText(f, "logUserField", "hung01");
+            GuiHelper.setText(f, "logPassField", "matkhau123");
+            GuiHelper.setText(f, "fromField", "hung01");
+            GuiHelper.setText(f, "toField", "nguoinhan");
+            GuiHelper.setText(f, "subjectField", "Bai tap Lab 5");
+            GuiHelper.setArea(f, "bodyArea",
+                    "Chao ban, day la noi dung thu.\nDong thu hai.");
+        });
+    }
+
+    /** Dem pixel tuong phan manh o phan noi cua component. */
+    static int countInteriorInk(Component c) {
+        int w = c.getWidth(), h = c.getHeight();
+        BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = img.createGraphics();
+        g.setColor(Theme.PAPER);
+        g.fillRect(0, 0, w, h);
+        c.paint(g);
+        g.dispose();
+
+        Color fill = fillColor(c);
+        int ink = 0;
+        for (int y = INSET; y < h - INSET; y++) {
+            for (int x = INSET; x < w - INSET; x++) {
+                if (dist(img.getRGB(x, y), fill) > THRESH) ink++;
+            }
+        }
+        return ink;
+    }
+
+    static Color fillColor(Component c) {
+        if (c instanceof Theme.FlatButton b) return buttonFill(b);
+        if (c instanceof javax.swing.text.JTextComponent) return Theme.SUNKEN;
+        if (c.isOpaque() && c.getBackground() != null) return c.getBackground();
+        return Theme.PAPER;
+    }
+
+    static Color buttonFill(Theme.FlatButton b) {
+        try {
+            java.lang.reflect.Field f = Theme.FlatButton.class
+                    .getDeclaredField("baseFill");
+            f.setAccessible(true);
+            return (Color) f.get(b);
+        } catch (Exception e) {
+            return Theme.SURFACE;
+        }
+    }
+
+    static int dist(int rgb, Color ref) {
+        int r = (rgb >> 16) & 0xFF;
+        int g = (rgb >> 8) & 0xFF;
+        int b = rgb & 0xFF;
+        return Math.abs(r - ref.getRed()) + Math.abs(g - ref.getGreen())
+                + Math.abs(b - ref.getBlue());
+    }
+
+    static String describe(Component c) {
+        if (c instanceof Theme.FlatButton b) {
+            return "nut \"" + GuiHelper.buttonText(b) + "\"";
+        }
+        if (c instanceof javax.swing.JPasswordField p) {
+            return "truong mat khau (" + p.getEchoChar() + "x"
+                    + p.getPassword().length + ")";
+        }
+        if (c instanceof JLabel l) {
+            String t = strip(l.getText());
+            return t.isEmpty() ? null : "nhan \"" + trunc(t) + "\"";
+        }
+        if (c instanceof javax.swing.JTextField f) {
+            return "truong nhap \"" + (f.getText().isEmpty() ? "<rong>" : f.getText()) + "\"";
+        }
+        if (c instanceof javax.swing.text.JTextComponent t) {
+            String s = strip(t.getText());
+            return s.isEmpty() ? null : "vung nhap \"" + trunc(s) + "\"";
+        }
+        return null;
+    }
+
+    static String strip(String s) {
+        return s == null ? "" : s.replaceAll("<[^>]*>", "").trim();
+    }
+
+    static String trunc(String s) {
+        return s.length() > 20 ? s.substring(0, 20) + "..." : s;
+    }
+}

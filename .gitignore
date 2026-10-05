@@ -1,0 +1,30 @@
+# Ket qua bien dich — sinh ra o moi lan chay, khong can luu.
+#   javac -encoding UTF-8 -d build src/*.java
+build/
+build-test/
+*.class
+
+# Du lieu thu that cua may nguoi dung: chua hash SHA-256 mat khau trong
+# accounts.dat va cac thu gui that (co noi dung ca nhan). Server tu tao
+# thu muc nay khi chay; cau truc duoc mo ta trong README.md §7.
+data/
+
+# File cua IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+nbproject/
+*.swp
+*~
+
+# File nen / tep trong Windows
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Log / file tam
+*.log
+*.tmp
