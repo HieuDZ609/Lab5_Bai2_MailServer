@@ -259,6 +259,21 @@ public class E2E {
         GuiHelper.login(f, "hung01", "matkhau123", PORT);
 
         MailClient probe = new MailClient("localhost", PORT);
+
+        // Thu do may chu tu tao (thu chao mung) khong co dong IP -> hien "(thu cu)"
+        // thay vi hien so 0.0.0.0 hay chu rong.
+        selectMail(f, "new_email.txt");
+        check("Thu khong co IP: sang tab Doc thu", true,
+                GuiHelper.waitUntil(() -> GuiHelper.currentTab(f) == 3, 5000));
+        check("Thu server tao: khong co Sender-IP -> hien '(thu cu)'", "(thư cũ)",
+                GuiHelper.text(f, "readSenderIp"));
+        // Nguoc lai, IP nguoi nhan lai BIET: thu chao mung da duoc doc trong
+        // chinh lan nay nen server da ghi Receiver-IP vao file.
+        check("Thu server tao: da ghi Receiver-IP khi doc", true,
+                mailFileHas("hung01", "new_email.txt", "Receiver-IP:"));
+        check("Thu server tao: IP nguoi nhan hien gia tri thật", "127.0.0.1",
+                GuiHelper.text(f, "readReceiverIp"));
+
         java.util.List<String> before = GuiHelper.mailboxNames(f);
         String sentName = "";   // xac dinh tu chinh danh sach, khong doan theo so luu
 
@@ -308,6 +323,18 @@ public class E2E {
         check("Bam thu vua gui: danh dau chua doc tat",
                 false, GuiHelper.unreadDot(f, sentName));
 
+        // Hai dong IP: server ghi vao file thu, GUI hien len o tab Doc thu.
+        check("File thu co dong Sender-IP (may chu tu ghi)", true,
+                mailFileHas("hung01", sentName, "Sender-IP:"));
+        check("File thu co dong Receiver-IP (ghi khi doc)", true,
+                mailFileHas("hung01", sentName, "Receiver-IP:"));
+        check("File thu: dong IP nam trong header, khong roi vao body", true,
+                mailBodyIsClean("hung01", sentName, "Dong 1\nDong 2"));
+        check("Tab Doc thu hien IP nguoi gui", "127.0.0.1",
+                GuiHelper.text(f, "readSenderIp"));
+        check("Tab Doc thu hien IP nguoi nhan", "127.0.0.1",
+                GuiHelper.text(f, "readReceiverIp"));
+
         // May khac gui thu moi DUNG luc dang doc thu: poll phai them thu vao danh
         // sach nhung khong duoc lam mau noi dung dang xem.
         String[] r = probe.send("nguoi_ta", "hung01",
@@ -344,20 +371,29 @@ public class E2E {
      * sach (chi co {@code handleList}), va doi chieu bang chinh danh sach cua GUI thi
      * moi dang tin. Client nay chi goi LIST nen khong dung dau chon cua frame.
      */
+    /** @return noi dung file thu tren dia, dung de kiem tra header server ghi */
+    static String mailFile(String user, String name) throws Exception {
+        return Files.readString(DATA.resolve(user).resolve(name));
+    }
+
+    static boolean mailFileHas(String user, String name, String line) throws Exception {
+        return mailFile(user, name).contains(line);
+    }
+
+    /** @return true neu phan body dung nguyen, khong bi lan dong header vao */
+    static boolean mailBodyIsClean(String user, String name, String expectedBody)
+            throws Exception {
+        String c = mailFile(user, name).replace("\r\n", "\n");
+        int split = c.indexOf("\n\n");
+        return split > 0 && c.substring(split + 2).stripTrailing().equals(expectedBody);
+    }
+
     static String serverOrder(MailClient probe, String user) throws Exception {
         return String.valueOf(Protocol.parseFileList(probe.list(user)[1]));
     }
 
-    @SuppressWarnings("unchecked")
     static void selectMail(MailClientFrame f, String name) throws Exception {
-        JList<String> l = mailboxList(f);
-        SwingUtilities.invokeAndWait(() -> {
-            int at = indexOf(l, name);
-            if (at >= 0) {
-                l.setSelectedIndex(at);
-                l.ensureIndexIsVisible(at);
-            }
-        });
+        GuiHelper.openMail(f, name);
     }
 
     static int visibleTabs(javax.swing.JFrame f) throws Exception {

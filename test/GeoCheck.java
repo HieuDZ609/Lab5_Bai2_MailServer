@@ -73,7 +73,31 @@ public class GeoCheck {
                     GuiHelper.setText(box[0], "portField", String.valueOf(port));
                 });
                 GuiHelper.login((MailClientFrame) box[0], "hung01", "matkhau123", port);
-                System.out.println("  (da dang nhap: kiem ca 4 tab + hop thu)");
+                // MO THU THAT: chi mo moi danh sach thi tab "Doc thu" chua duoc
+                // sap xep (validate) nen component cua no khong co to do that ->
+                // moi loi hinh hoc trong tab nay deu bi bo qua.
+                c.send("hung01", "hung01", "Kiem tra hinh hoc", "Dong 1\nDong 2");
+                MailClient other = new MailClient("localhost", port);
+                other.send("minh", "hung01", "Thu den giua luc doc", "Khach mo");
+                MailClientFrame mf = (MailClientFrame) box[0];
+                // Danh sach trong GUI do vong poll cua app quyet dinh, khong phai
+                // client cua bo test, nen phai CHO no xuat hien chu khong sleep co
+                // dinh (neu khong, danh sach rong -> openMail(null) -> NPE).
+                final String[] newest = {null};
+                GuiHelper.waitUntil(() -> {
+                    newest[0] = null;
+                    for (String n : GuiHelper.mailboxNames(mf)) {
+                        if (n.startsWith("mail_")) newest[0] = n;
+                    }
+                    return newest[0] != null;
+                }, 10000);
+                if (newest[0] == null) {
+                    throw new IllegalStateException("Khong thay thu nao trong hop thu");
+                }
+                GuiHelper.openMail(box[0], newest[0]);
+                Thread.sleep(600);
+                System.out.println("  (da dang nhap va mo thu " + newest[0]
+                        + ": kiem ca 4 tab, gom ca 6 dong header cua tab Doc thu)");
             } finally {
                 server.shutdown();
             }

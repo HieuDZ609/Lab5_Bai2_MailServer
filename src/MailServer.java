@@ -218,7 +218,7 @@ public class MailServer {
                 final long reqId = id;
                 // Day qua xu ly o thread khac de listener khong bi chan boi I/O file
                 workerPool.submit(() -> {
-                    String response = handle(raw);
+                    String response = handle(raw, clientIp);
                     try {
                         send(socket, clientIp, clientPort, response);
                         if (!isPoll) {
@@ -286,7 +286,11 @@ public class MailServer {
      * @param raw noi dung request tho
      * @return response dang chuoi de gui ve client
      */
-    private String handle(String raw) {
+    /**
+     * @param clientIp dia chi IP may gui request, lay tu {@link DatagramPacket}.
+     *                  Truyen xuong {@code SEND}/{@code FETCH} de ghi vao file thu.
+     */
+    private String handle(String raw, InetAddress clientIp) {
         List<String> fields;
         try {
             fields = Protocol.parseRequest(raw);
@@ -314,7 +318,7 @@ public class MailServer {
 
                 case Protocol.OP_SEND:
                     // Yeu cau 2: gui email -> xac dinh account nhan, tao file noi dung
-                    return handleSend(fields);
+                    return handleSend(fields, clientIp);
 
                 case Protocol.OP_LOGOUT:
                     return Protocol.ok("Goodbye");
@@ -325,7 +329,7 @@ public class MailServer {
 
                 case Protocol.OP_FETCH:
                     // Mo rong (KHONG phai yeu cau de bai): lay noi dung 1 file thu
-                    return handleFetch(fields);
+                    return handleFetch(fields, clientIp);
 
                 default:
                     return Protocol.error(Protocol.BAD_REQUEST,
@@ -397,7 +401,7 @@ public class MailServer {
      * @param fields truong da tach cua request
      * @return response dang chuoi de gui ve client
      */
-    private String handleFetch(List<String> fields) {
+    private String handleFetch(List<String> fields, InetAddress clientIp) {
         if (fields.size() != 3) {
             return Protocol.error(Protocol.BAD_REQUEST,
                     "Cu phap: FETCH|username|filename");
@@ -411,7 +415,10 @@ public class MailServer {
             return Protocol.error(Protocol.BAD_REQUEST, "Ten file khong hop le");
         }
 
-        String content = mailbox.readMail(username, fileName);
+        // Ghi IP nguoi doc vao file thu (lan dau tien) va tra ve noi dung da cap
+        // nhat, de client thay ngay dong Receiver-IP tren man hinh.
+        String content = mailbox.readMailWithReceiverIp(username, fileName,
+                clientIp == null ? null : clientIp.getHostAddress());
         if (content == null) {
             return Protocol.error(Protocol.NOT_FOUND,
                     "Khong tim thay file '" + fileName + "' trong hop thu cua '"
@@ -431,7 +438,7 @@ public class MailServer {
     /**
      * SEND|from|to|subject|body
      */
-    private String handleSend(List<String> fields) {
+    private String handleSend(List<String> fields, InetAddress clientIp) {
         if (fields.size() != 5) {
             return Protocol.error(Protocol.BAD_REQUEST,
                     "Cu phap: SEND|from|to|subject|body");
@@ -455,7 +462,10 @@ public class MailServer {
         if (body.isBlank()) {
             body = "(Email rong)";
         }
-        return mailbox.deliverMail(from, to, subject, body);
+        // IP nguoi gui lay chinh truc tiep tu datagram SEND vua nhan: day la noi
+        // duy nhat server biet may nao that su gui thu nay.
+        return mailbox.deliverMail(from, to, subject, body,
+                clientIp == null ? null : clientIp.getHostAddress());
     }
 
     // ==================== TIEN ICH ====================

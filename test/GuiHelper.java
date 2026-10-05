@@ -95,6 +95,31 @@ final class GuiHelper {
         return onEdt(() -> ((Integer) field(frame, "currentTab")));
     }
 
+    /**
+     * Bam vao mot thu trong danh sach -> app tu chuyen sang tab "Doc thu".
+     *
+     * <p>De trong {@code GuiHelper} (khong phai trong {@code E2E}) vi ca {@code GeoCheck}
+     * va {@code InkCheck} deu can mo thu thật. Truoc day hai bo kiem do chi dang nhap
+     * roi dung lai, nen **tab "Doc thu" chua bao gio duoc do hinh hoc** — chinh vi vay
+     * loi hai dong IP bi de chong len o cua so hay the noi dung bi keo nhan khong ai
+     * bat duoc.
+     */
+    static void openMail(javax.swing.JFrame frame, String name) throws Exception {
+        @SuppressWarnings("unchecked")
+        javax.swing.JList<String> list =
+                (javax.swing.JList<String>) field(frame, "mailboxList");
+        onEdt(() -> {
+            for (int i = 0; i < list.getModel().getSize(); i++) {
+                if (name.equals(list.getModel().getElementAt(i))) {
+                    list.setSelectedIndex(i);
+                    list.ensureIndexIsVisible(i);
+                    return null;
+                }
+            }
+            return null;
+        });
+    }
+
     /** Chay mot phep tinh co the nem loi tren EDT. */
     static <T> T onEdt(ThrowingSupplier<T> body) throws Exception {
         Object[] out = {null};
@@ -260,6 +285,21 @@ final class GuiHelper {
     }
 
     @SuppressWarnings("unchecked")
+    /**
+     * Bam nut chuyen tab theo chi so (0=Dang ky, 1=Dang nhap, 2=Hop thu, 3=Doc thu).
+     *
+     * <p>Dung {@code doClick()} — cung duong di voi nguoi dung that, dung cach goi
+     * {@code selectTab()} noi bo se bo qua hien ung phu cua viec chuyen tab.
+     */
+    static void clickTab(javax.swing.JFrame frame, int index) throws Exception {
+        Component b = onEdt(() -> {
+            List<Component> bs = tabButtons((MailClientFrame) frame);
+            return index >= 0 && index < bs.size() ? bs.get(index) : null;
+        });
+        if (b == null) throw new IllegalStateException("Khong co nut tab " + index);
+        SwingUtilities.invokeAndWait(((Theme.FlatButton) b)::doClick);
+    }
+
     static List<Component> tabButtons(MailClientFrame f)
             throws IllegalAccessException, NoSuchFieldException {
         return (List<Component>) field(f, "tabButtons");

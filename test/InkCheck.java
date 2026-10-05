@@ -91,9 +91,17 @@ public class InkCheck {
                     GuiHelper.setLabel(box[0], "readTo", "hung01@mailserver.local");
                     GuiHelper.setLabel(box[0], "readSubject", "Chu de thu");
                     GuiHelper.setLabel(box[0], "readDate", "Sun, 04 Oct 2026 21:14:02 +0700");
+                    GuiHelper.setLabel(box[0], "readSenderIp", "172.16.0.252");
+                    GuiHelper.setLabel(box[0], "readReceiverIp", "192.168.1.55");
                     GuiHelper.setArea(box[0], "readBody", "Dong mot\nDong hai\nDong ba");
                 });
-                System.out.println("  (da dang nhap: kiem ca 4 tab + hop thu)");
+                // Phai MO tab "Doc thu" thi moi kiem duoc chu trong do. Chi nap
+                // noi dung ma khong chuyen tab thi moi component cua tab do chua
+                // bao gio duoc ve, nen bao loi "chu khong hien" la vo dung.
+                GuiHelper.clickTab(box[0], 3);
+                Thread.sleep(700);
+                System.out.println("  (da dang nhap + mo tab Doc thu: kiem ca 4 tab,"
+                        + " gom 6 dong header va vung noi dung thu)");
             } finally {
                 server.shutdown();
             }

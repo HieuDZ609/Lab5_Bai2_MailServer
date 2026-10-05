@@ -102,6 +102,9 @@ public class MailClientFrame extends JFrame {
     private java.util.List<Theme.FlatButton> tabButtons;
 
     /** Chi so cua 4 tab theo thu tu khai bao trong {@link #buildTabs()}. */
+    /** Hien thi khi file thu khong co dong IP (thu tao truoc khi tinh nang nay co). */
+    private static final String OLD_MAIL_MARK = "(thư cũ)";
+
     private static final int TAB_REGISTER = 0;
     private static final int TAB_LOGIN = 1;
     private static final int TAB_SEND = 2;
@@ -143,6 +146,8 @@ public class MailClientFrame extends JFrame {
     private final JLabel readFileName = Theme.labelStrong("");
     private final JLabel readFrom = Theme.label("");
     private final JLabel readTo = Theme.label("");
+    private final JLabel readSenderIp = Theme.label("");
+    private final JLabel readReceiverIp = Theme.label("");
     private final JLabel readSubject = Theme.label("");
     private final JLabel readDate = Theme.label("");
     private final JTextArea readBody = new Theme.RoundedTextArea();
@@ -660,16 +665,25 @@ public class MailClientFrame extends JFrame {
         g.gridwidth = 2;
         p.add(head, g);
 
-        // 4 hang header. Tieu de dat trong GridBagLayout o cot 0 nen khong danh
-        // toi be rong o noi dung o cot 1.
+        // Mot hang "tieu de | gia tri" cua phan header thu. Chi so hang phai chay
+        // tu 1 va TANG DAN: cac o ben duoi (the + nut + ket qua) lay so hang
+        // tiep theo tu `row` chứ khong ghi so cung. Truoc day chung ghi cu nhung
+        // so hang 5/6/7, nen khi them 2 dong IP o giua thi the noi dung bi de
+        // CHONG LEN dong IP, va nut bam cung de len dong IP con lai.
+        int row = 1;
         g.gridwidth = 1;
-        addHeaderRow(p, g, 1, "Từ", readFrom);
-        addHeaderRow(p, g, 2, "Đến", readTo);
-        addHeaderRow(p, g, 3, "Tiêu đề", readSubject);
-        addHeaderRow(p, g, 4, "Ngày", readDate);
+        addHeaderRow(p, g, row++, "Từ", readFrom);
+        addHeaderRow(p, g, row++, "Đến", readTo);
+        addHeaderRow(p, g, row++, "Tiêu đề", readSubject);
+        addHeaderRow(p, g, row++, "Ngày", readDate);
+        // Hai dong IP: server ghi "Sender-IP" luc giao thu, "Receiver-IP" luc thu
+        // duoc doc lan dau. Thu cu khong co dong nay -> hien "(thu cu)".
+        addHeaderRow(p, g, row++, "IP người gửi", readSenderIp);
+        addHeaderRow(p, g, row++, "IP người nhận", readReceiverIp);
 
         // Cac gia tri header dung font mono de de doc dia chi va moc thoi gian
-        for (JLabel l : new JLabel[]{readFrom, readTo, readSubject, readDate}) {
+        for (JLabel l : new JLabel[]{readFrom, readTo, readSubject, readDate,
+                readSenderIp, readReceiverIp}) {
             l.setFont(Theme.MONO);
         }
 
@@ -685,7 +699,8 @@ public class MailClientFrame extends JFrame {
         bodyScroll.getViewport().setOpaque(false);
         bodyScroll.getVerticalScrollBar().setOpaque(false);
 
-        g.gridx = 0; g.gridy = 5; g.gridwidth = 2;
+        // Hang tiep theo sau header: noi dung thu.
+        g.gridx = 0; g.gridy = row; g.gridwidth = 2;
         g.weighty = 1;
         g.fill = GridBagConstraints.BOTH;
         g.insets = new Insets(Theme.S2, 0, Theme.S2, 0);
@@ -703,13 +718,13 @@ public class MailClientFrame extends JFrame {
         actions.setOpaque(false);
         actions.add(back);
 
-        g.gridy = 6;
+        g.gridy = row + 1;
         g.weighty = 0;
         g.fill = GridBagConstraints.HORIZONTAL;
         g.insets = new Insets(0, 0, Theme.S2, 0);
         p.add(actions, g);
 
-        g.gridy = 7;
+        g.gridy = row + 2;
         p.add(readResult, g);
         return p;
     }
@@ -741,6 +756,8 @@ public class MailClientFrame extends JFrame {
         readTo.setText("");
         readSubject.setText("");
         readDate.setText("");
+        readSenderIp.setText("");
+        readReceiverIp.setText("");
         readBody.setText("");
         readResult.setText("");
     }
@@ -763,7 +780,9 @@ public class MailClientFrame extends JFrame {
         String headerBlock = split < 0 ? text : text.substring(0, split);
         String body = split < 0 ? "" : text.substring(split + 2);
 
+        // "(thu cu)" = file thu duoc tao boi phien ban truoc, khong co dong IP.
         String from = "", to = "", subject = "", date = "";
+        String senderIp = OLD_MAIL_MARK, receiverIp = OLD_MAIL_MARK;
         for (String line : headerBlock.split("\n")) {
             int c = line.indexOf(':');
             if (c < 0) continue;
@@ -774,16 +793,19 @@ public class MailClientFrame extends JFrame {
                 case "To" -> to = value;
                 case "Subject" -> subject = value;
                 case "Date" -> date = value;
+                case "Sender-IP" -> senderIp = value;
+                case "Receiver-IP" -> receiverIp = value;
                 default -> { }
             }
         }
         // Bo 1 dong trong cuoi body (buildMailFile() ghi them \n o cuoi)
-        return new MailView(from, to, subject, date, body.stripTrailing());
+        return new MailView(from, to, subject, date, body.stripTrailing(),
+                senderIp, receiverIp);
     }
 
     /** Cac truong cua 1 thu sau khi tach. */
-    private record MailView(String from, String to, String subject,
-            String date, String body) {
+    private record MailView(String from, String to, String subject, String date,
+            String body, String senderIp, String receiverIp) {
     }
 
     private JPanel buildFooter() {
@@ -1079,6 +1101,8 @@ public class MailClientFrame extends JFrame {
                         readTo.setText(v.to());
                         readSubject.setText(v.subject());
                         readDate.setText(v.date());
+                        readSenderIp.setText(v.senderIp());
+                        readReceiverIp.setText(v.receiverIp());
                         readBody.setText(v.body());
                         readBody.setCaretPosition(0);
                         selectTab(TAB_READ);

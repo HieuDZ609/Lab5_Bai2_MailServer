@@ -24,7 +24,7 @@ hỗ trợ 3 chức năng — tạo tài khoản, gửi email, đăng nhập và
 | `LIST` | Trả về danh sách tên file thư của một tài khoản | Client **poll 1 giây/lần** nên thư mới hiện realtime, không cần bấm tải lại |
 | `FETCH` | Trả về **nội dung** của một file thư | Để xem được thư; `LOGIN` chỉ trả *tên file* |
 
-> ⚠️ **`LIST` và `FETCH` không yêu cầu mật khẩu** (xem [§8.4](#84-cảnh-báo-bảo-mật-của-phần-mở-rộng)).
+> ⚠️ **`LIST` và `FETCH` không yêu cầu mật khẩu** (xem [§8.5](#85-cảnh-báo-bảo-mật-của-phần-mở-rộng)).
 > Đây là đánh đổi được chấp nhận có chủ ý để giữ protocol gọn; bài thực tế phải xác thực.
 
 ---
@@ -274,7 +274,38 @@ RESPONSE:  <STATUS>|<message>\r\n
 | `409` | Conflict | Tài khoản đã tồn tại |
 | `500` | Server Error | Lỗi hệ thống (không ghi được file…) |
 
-### 8.4. Cảnh báo bảo mật của phần mở rộng
+### 8.4. Định dạng file thư trên đĩa
+
+```
+From: <nguồn@mailserver.local>
+To: <đích@mailserver.local>
+Subject: ...
+Date: Mon, 05 Oct 2026 16:08:06 +0700
+Sender-IP: 172.16.0.252          ← máy chủ lấy từ datagram SEND, ghi lúc giao thư
+Message-ID: <...>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Receiver-IP: 192.168.1.55        ← máy chủ ghi ở lần ĐỌC ĐẦU TIÊN của thư
+
+<nội dung thư>
+```
+
+Hai dòng IP phục vụ thống kê vận hành (xem [§10.2](#102-ip-người-gửi--ip-người-nhận)):
+
+| Dòng | Ghi khi nào | Ghi tối đa |
+|---|---|---|
+| `Sender-IP` | Lúc nhận `SEND` — máy chủ biết chính xác IP người gửi từ `DatagramPacket` | 1 lần, không đổi |
+| `Receiver-IP` | Lúc `FETCH` **lần đầu** — IP người nhận chỉ biết được khi thư bị đọc | 1 lần, không đổi |
+
+> **Vì sao `Receiver-IP` ghi lúc đọc chứ không lúc gửi:** khi máy chủ giao thư cho
+> `hung01`, nó chỉ biết *tài khoản* nhận, **không biết máy nào** sẽ mở thư đó. Hai máy
+> cùng đăng nhập `hung01` thì đều là người nhận hợp lệ. Nên "người nhận" ở đây được hiểu là
+> **máy đã đọc thư lần đầu**, và dòng này **không ghi đè** khi thư được mở lần sau.
+
+Thư tạo sẵn từ trước khi có tính năng này (kể cả `new_email.txt` do máy chủ tự sinh) sẽ
+**không có** hai dòng trên; GUI hiện `(thư cũ)` thay vì bị bỏ trống.
+
+### 8.5. Cảnh báo bảo mật của phần mở rộng
 
 Ba điểm phải nói thẳng khi vấn đáp, vì chúng là **hạn chế thật** của đồ án:
 
@@ -338,7 +369,7 @@ Script tự biên dịch sạch `src/` vào `build/`, biên dịch `test/` vào 
 từng công cụ và báo cáo. Riêng từng công cụ thì chạy tay:
 
 ```bash
-java -Dfile.encoding=UTF-8 -cp build:build-test E2E        # 91 check
+java -Dfile.encoding=UTF-8 -cp build:build-test E2E        # 100 check
 java -Dfile.encoding=UTF-8 -cp build:build-test GeoCheck MailClientFrame 1180 740 login
 ```
 
@@ -347,7 +378,7 @@ java -Dfile.encoding=UTF-8 -cp build:build-test GeoCheck MailClientFrame 1180 74
 phản hồi hiện trên màn hình, thay vì chỉ gọi hàm lõi. Server được mở trong cùng JVM nên
 không cần terminal riêng.
 
-Kết quả thu được: **91/91 PASS**, chia làm 10 nhóm (A–K):
+Kết quả thu được: **100/100 PASS**, chia làm 10 nhóm (A–K):
 
 | Nhóm | Nội dung |
 |---|---|
@@ -360,7 +391,7 @@ Kết quả thu được: **91/91 PASS**, chia làm 10 nhóm (A–K):
 | G | `LOGOUT`: xác nhận `200`, xoá phiên, xoá danh sách thư |
 | H | **Cảm giác GUI**: 4/2 tab theo trạng thái, ẩn/hiện thẻ hộp thư, bấm thư ra nội dung, đăng xuất |
 | I | Server vẫn phản hồi sau khi client gửi lệnh lỗi |
-| K | Người gửi xem được thư mình vừa gửi; thư đến giữa lúc đang đọc không làm mất nội dung đang xem |
+| K | Người gửi xem được thư mình vừa gửi; thư đến giữa lúc đang đọc không làm mất nội dung đang xem; hai dòng IP trong file thư và trên GUI |
 
 > `build/` là sản phẩm, `build-test/` chỉ là class của bộ kiểm thử — không cần
 > phân phối đi kèm.
@@ -429,6 +460,8 @@ print(rq("LOGOUT\r\n"))                         # 200
 ---
 
 ## 10. Giải thích code
+
+### 10.1 Bản đồ file
 
 | File | Trách nhiệm |
 |---|---|
@@ -504,6 +537,31 @@ chính thức thì phải đo theo byte đã encode.
 **`requireClient()` phải biết đang bấm ở tab nào.** Thông báo "chưa kết nối" trước đây luôn
 ghi vào nhãn của tab `Đăng ký`, nên bấm `Gửi thư` lại thấy lỗi ở tab không liên quan.
 Vì vậy hàm này nhận tham số là nhãn cần báo lỗi, mỗi thao tác truyền đúng nhãn của mình.
+
+---
+
+### 10.2 IP người gửi & IP người nhận
+
+Tab **Đọc thư** có thêm hai dòng, lấy từ header của file thư:
+
+| Dòng hiển thị | Nguồn |
+|---|---|
+| IP người gửi | `Sender-IP` — máy chủ ghi lúc giao thư, biết từ IP của datagram `SEND` |
+| IP người nhận | `Receiver-IP` — máy chủ ghi ở lần đọc đầu tiên |
+
+Muốn xem trên mạng thật, chạy server ở một máy và client ở máy khác cùng Wi-Fi (xem
+[§11](#11-khắc-phục-sự-cố)). Hai dòng IP sẽ hiện **khác nhau**, và đó là cách chứng minh
+bài chạy đúng qua mạng chứ không phải chỉ trên `localhost`.
+
+> `Sender-IP` là dữ liệu **tự khai** trong nội dung thư: máy gửi không thể tự chứng minh IP
+> của nó, chỉ máy chủ mới biết chắc. Với giao thức thật, IP phải đến từ tầng mạng
+> (`X-Originating-IP` trong SMTP) chứ không tin vào dữ liệu người dùng gửi.
+
+**Ghi chú khi thêm hàng mới vào tab `Đọc thư`:** phần thân thư, nút và dòng kết quả lấy chỉ số
+hàng từ biến đếm `row` của khối header, **không ghi số cứng**. `GridBagLayout` cho phép nhiều
+component cùng một ô và sẽ *chia đôi chiều cao ô đó* chứ không báo lỗi — nên ghi số cứng rất
+dễ tạo ra lỗi "hai dòng bị tụt xuống dưới, vùng nội dung bị bóp" mà nhìn bằng mắt rất khó
+phát hiện. Chi tiết ở [§10.2](#102-ip-người-gửi--ip-người-nhận).
 
 ---
 

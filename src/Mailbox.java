@@ -5,6 +5,7 @@ import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -267,6 +268,15 @@ public class Mailbox {
      * va cac thread sau se ghi de hoac nem loi. Do la "race condition" kinh dien.
      */
     public synchronized String deliverMail(String from, String to, String subject, String body) {
+        return deliverMail(from, to, subject, body, null);
+    }
+
+    /**
+     * Ban nhan {@code senderIp} — may chu biet IP nguoi gui tu chinh datagram
+     * {@code SEND} vua nhan, nen ghi thang vao header file thu.
+     */
+    public synchronized String deliverMail(String from, String to, String subject,
+                                          String body, String senderIp) {
         String error = invalidReason(to);
         if (error != null) {
             return Protocol.error(Protocol.BAD_REQUEST, "Nguoi nhan khong hop le - " + error);
@@ -283,7 +293,7 @@ public class Mailbox {
         try {
             String fileName = nextMailFileName(mailbox);
             String content = buildMailFile(from + DEFAULT_DOMAIN, to + DEFAULT_DOMAIN,
-                    subject, body);
+                    subject, body, senderIp);
             // Ghi ra file tam roi doi ten sang file chinh -> tranh file hoac khong doc duoc.
             Path temp = mailbox.resolve(fileName + ".tmp");
             Path target = mailbox.resolve(fileName);
@@ -489,6 +499,94 @@ public class Mailbox {
      * @param fileName ten file can doc
      * @return noi dung file, hoac null neu khong doc duoc
      */
+    /**
+     * Doc thu va **ghi lai IP nguoi doc** vao file thu (chi lan dau tien).
+     *
+     * <p><b>Viet khi doc la dung:</b> IP nguoi nhan chi biet o thoi diem thu bi
+     * <i>doc</i>, khong biet luc thu duoc <i>gui</i> — may chu khong the doan. Neu
+     * doi chieu "lan doc dau tien" thi moi dung con so IP nguoi nhan.
+     *
+     * <p><b>Chi ghi mot lan:</b> thu se duoc mo nhieu lan (va boi nhieu may), nhung
+     * dong nay phai phan anh nguoi nhan dau tien. Lan sau thay co san nen khong ghi
+     * de.
+     *
+     * <p><b>An toan khi ghi:</b> ghi ra file tam roi {@code move} de dan — dung
+     * nguyen tac giong {@link #deliverMail}, neu may chut bi tat giua chung thi file
+     * thu van nguyen, khong bi cat nua dong. Het duoc {@code synchronized} cung
+     * {@link #deliverMail} nen hai may doc cung mot thu khong ghi de nhau.
+     *
+     * @param readerIp IP may dang doc thu
+     * @return noi dung thu (da bao dam co dong {@code Receiver-IP}), hoac {@code null}
+     *         neu khong tim thay file
+     */
+    public synchronized String readMailWithReceiverIp(String username, String fileName,
+                                                      String readerIp) {
+        String content = readMail(username, fileName);
+        if (content == null) return null;
+        if (readerIp == null || readerIp.isBlank()) return content;
+        // File da co dong nay rong -> gi nguyen, khong ghi de.
+        if (hasHeader(content, "Receiver-IP")) return content;
+
+        String updated = insertHeader(content, "Receiver-IP", readerIp);
+        try {
+            Path target = mailboxOf(username).resolve(fileName);
+            Path temp = mailboxOf(username).resolve(fileName + ".tmp");
+            Files.writeString(temp, updated, StandardCharsets.UTF_8);
+            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            // Ghi khong duoc khong duoc de khong doc: van tra ve noi dung da doc duoc,
+            // chi la thieu dong IP hien thi.
+            return content;
+        }
+        return updated;
+    }
+
+    /**
+     * @return {@code true} neu noi dung thu da co dong header nay
+     */
+    private static boolean hasHeader(String content, String key) {
+        String needle = key + ":";
+        for (String line : headerBlockOf(content).split("\n")) {
+            // Bo \r neu file duoc ghi theo chuan RFC (CRLF).
+            if (line.startsWith(needle)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * @return phan header cua file thu, dung truoc dong trong phan cach header/body
+     */
+    private static String headerBlockOf(String content) {
+        // File tao boi buildMailFile() dung \n; file cu doi chuan RFC dung \r\n.
+        // Phai thu ca hai, neu khong se khong tim thay dong trong khi gap file CRLF.
+        int split = content.indexOf("\n\n");
+        if (split < 0) split = content.indexOf("\r\n\r\n");
+        return split < 0 ? content : content.substring(0, split);
+    }
+
+    /**
+     * Chen mot dong header moi vao cuoi phan header, dung truoc dong trong.
+     *
+     * <p>Phai chen <b>truoc</b> dong trong: neu chen sau, dong nay se rơi xuong
+     * thanh <b>noi dung thu</b> va hiien thi ra nhu mot doan van cua thu.
+     *
+     * <p>File thu trong may duoc ghi boi {@link #buildMailFile} bang
+     * {@link Protocol#NEWLINE} ({@code \n}), nhung van kiem tra {@code \r\n} truoc
+     * de khong lam hong file cu do chuong trinh khac tao.
+     */
+    private static String insertHeader(String content, String key, String value) {
+        String nl = content.contains("\r\n") ? "\r\n" : Protocol.NEWLINE;
+        int split = content.indexOf("\n\n");
+        if (split < 0) split = content.indexOf("\r\n\r\n");
+        if (split < 0) {
+            // Khong co dong trong -> khong tach duoc header/body. Ghi them vao
+            // cuoi thay vi chen, con hon la lam hong file.
+            return content.stripTrailing() + nl + key + ": " + value + nl;
+        }
+        return content.substring(0, split) + nl + key + ": " + value
+                + content.substring(split);
+    }
+
     public String readMail(String username, String fileName) {
         if (!isValidUsername(username) || fileName.contains("..") || fileName.contains("/")) {
             return null;
@@ -513,11 +611,26 @@ public class Mailbox {
      * @return noi dung file email
      */
     public static String buildMailFile(String from, String to, String subject, String body) {
+        return buildMailFile(from, to, subject, body, null);
+    }
+
+    /**
+     * Ban co ghi {@code Sender-IP} — dung khi thu do do chinh may may chu tao ra.
+     *
+     * @param senderIp dia chi IP may gui, hoac {@code null} de khong ghi (vi du thu
+     *                 chao mung do may chu tu sinh)
+     */
+    public static String buildMailFile(String from, String to, String subject, String body,
+                                       String senderIp) {
         StringBuilder sb = new StringBuilder();
         sb.append("From: ").append(from).append(Protocol.NEWLINE);
         sb.append("To: ").append(to).append(Protocol.NEWLINE);
         sb.append("Subject: ").append(subject).append(Protocol.NEWLINE);
         sb.append("Date: ").append(currentRfc5322Date()).append(Protocol.NEWLINE);
+        // Chi ghi khi biet IP: thu cu khong co dong nay (cu) van parse duoc.
+        if (senderIp != null && !senderIp.isBlank()) {
+            sb.append("Sender-IP: ").append(senderIp).append(Protocol.NEWLINE);
+        }
         sb.append("Message-ID: <").append(messageId()).append('>').append(Protocol.NEWLINE);
         sb.append("MIME-Version: 1.0").append(Protocol.NEWLINE);
         sb.append("Content-Type: text/plain; charset=\"UTF-8\"").append(Protocol.NEWLINE);

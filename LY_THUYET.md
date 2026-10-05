@@ -1139,7 +1139,7 @@ RESPONSE:  <STATUS>|<message><CRLF>
 
 Ba dòng cuối là **phần mở rộng tự thêm**, không thuộc đề bài. Ba lệnh của đề bài
 (`REGISTER`, `LOGIN`, `SEND`) đều xác thực bằng mật khẩu; `LOGOUT` giữ nguyên nguyên tắc đó.
-`LIST`/`FETCH` **không mang mật khẩu** — xem [§3.7.3](#37.3-hạn-chế-bảo-mật-của-phần-mở-rộng).
+`LIST`/`FETCH` **không mang mật khẩu** — xem [§3.7.3](#373-hạn-chế-bảo-mật-của-phần-mở-rộng).
 
 #### Bảng mã trả lời (lấy cảm hứng từ HTTP)
 
@@ -1632,6 +1632,14 @@ phiên và poll tiếp. Muốn làm đúng chuẩn thì phải:
 | `LOGIN` trả token có hạn, `LOGOUT` thu hồi token | Thực sự có phiên để hủy |
 | `accounts.dat` đổi sang PBKDF2/bcrypt/Argon2 có salt | SHA-256 không salt chống được rainbow table |
 
+**Hệ quả thứ ba, liên quan tới `Receiver-IP` ([§3.7.6](#376-lưu-ip-người-gửi-và-ip-người-nhận)):**
+vì `FETCH` không xác thực nên `Receiver-IP` chỉ chứng minh được *"máy nào đã mở thư **trước
+tiên**"*, **không** chứng minh được *"máy nào là chủ sở hữu thư"*. Hai máy cùng biết mật khẩu
+`tuan` đều có thể là người đọc hợp lệ; và vì request không có mật khẩu, một máy lạ cũng đọc
+được thư rồi ghi đè vị trí "đọc đầu tiên". Khi trình bày, phải nói rõ đây là **số liệu vận
+hành để thống kê, không phải cơ chế xác thực danh tính** — cùng hạn chế với chính phần
+`LIST`/`FETCH` nói ở trên.
+
 ### 3.7.4 Giao diện chỉ mở những gì dùng được
 
 Trước khi đăng nhập chỉ hiện `Đăng ký` + `Đăng nhập`; thẻ `Hộp thư`, tab `Gửi thư`, tab
@@ -1709,6 +1717,111 @@ Ngoài ra, cần phân biệt rõ lỗi của app và lỗi của nền tảng. 
 `ArrayIndexOutOfBoundsException` trong `sun.awt.X11InputMethodBase` khi gõ tiếng Việt — stack
 toàn bộ nằm trong JDK, không có frame nào của bài. Đó là lỗi input method của JDK trên X11, và
 cách xử lý đúng là đổi JRE hoặc đổi bộ gõ, **không phải sửa code bài**.
+
+### 3.7.6 Lưu IP người gửi và IP người nhận
+
+Bài Lab 5 mở rộng để ghi thêm **hai dòng header** vào mỗi file thư, rồi hiện ra ở tab
+`Đọc thư`:
+
+| Dòng header | Ghi vào lúc nào | Lấy IP từ đâu | Ghi tối đa |
+|---|---|---|---|
+| `Sender-IP` | khi nhận lệnh `SEND` | `DatagramPacket.getAddress()` của chính request đó | 1 lần |
+| `Receiver-IP` | khi `FETCH` **lần đầu** | `DatagramPacket.getAddress()` của chính request `FETCH` đó | 1 lần |
+
+File thư sau khi gửi và sau khi đọc lần đầu:
+
+```
+From: minh@mailserver.local
+To: hung@mailserver.local
+Subject: Bao cao tuan 5
+Date: Mon, 05 Oct 2026 16:08:06 +0700
+Sender-IP: 172.16.0.252
+Message-ID: <1791191286.cfe5a@mailserver.local>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Receiver-IP: 192.168.1.55
+
+Bao cao tuan 5 da nop.
+```
+
+**Bài học lý thuyết quan trọng nhất: vì sao `Receiver-IP` phải ghi lúc ĐỌC chứ không lúc GỬI**
+
+Khi máy chủ giao thư cho tài khoản `hung`, thứ nó biết được là **tài khoản** `hung` — còn máy
+nào sẽ mở thư đó thì **hoàn toàn không biết**. Máy chủ không định tuyến thư (không có bảng
+định tuyến tới từng máy), không có bảng ARP riêng, và nhiều máy có thể cùng đăng nhập một
+tài khoản. Vậy nên:
+
+- Ghi lúc gửi → không có IP để ghi, hoặc ghi bừa tên miền `hung` (vô nghĩa với IP).
+- Ghi lúc đọc lần đầu → **có IP thật**, và quy định "chỉ ghi một lần, không ghi đè" để
+  dòng này giữ được ý nghĩa *"người nhận đầu tiên"*, không bị đổi mỗi lần thư được mở.
+
+Đây là hiện tượng giống hệt trong thực tế: header `Received` của email bị chèn **mỗi bước
+chuyển tiếp** (hop) chứ không phải lúc tác giả bấm Gửi, và giá trị mà ta hay nhìn nhất
+(`Received: from ... by ... with ...`) chính là của **hop cuối cùng** — tức bước chuyển tiếp
+gần người nhận nhất. Chi tiết này được nêu ở [§2.2.2](#222-phiên-smtp-đầy-đủ-transcript).
+
+**Ba chi tiết kỹ thuật đã dùng trong code**
+
+1. **Chèn header phải tính từ vị trí dòng trống, không phải `+` vào đầu file.** Nếu chèn
+   sai chỗ, dòng IP sẽ rơi xuống dưới dòng trống và **bị hiển thị như một đoạn văn của thư** —
+   người đọc thấy "Sender-IP: 172.16.0.252" nằm giữa nội dung. Vì vậy `insertHeader()` tìm
+   `\n\n` rồi chèn **ngay trước** nó.
+2. **Ghi file phải an toàn như lúc giao thư.** `readMailWithReceiverIp()` cũng là
+   `synchronized` và cũng ghi ra file tạm rồi `Files.move()`. Nếu chỉ `Files.writeString()`
+   thẳng vào file thật mà máy bị tắt đột ngột giữa chừng, người dùng mất thư — một thao tác
+   **đọc** lại làm hỏng dữ liệu thì còn tệ hơn lỗi gửi thư.
+3. **`FETCH` phải trả về nội dung *đã cập nhật*.** Nếu server cập nhật file nhưng response
+   vẫn là bản cũ thì client không thấy dòng IP cho tới lần đọc kế tiếp — và với chính tác
+   giả lần đọc đầu tiên thì dòng đó phải xuất hiện ngay.
+
+**Bài học đắt giá nhất của phần này: thêm một hàng vào layout là phải sửa cả các số thứ tự phía sau**
+
+Thêm hai dòng IP vào giữa bảng header đã làm hỏng tab `Đọc thư` theo cách mà nhìn bằng mắt
+rất khó phát hiện. Vì sao:
+
+| Mã cũ | Chuyện gì xảy ra khi thêm 2 dòng header |
+|---|---|
+| header: dòng `1, 2, 3, 4` | — |
+| thân thư: `g.gridy = 5` | trùng với dòng IP thứ nhất |
+| nút: `g.gridy = 6` | trùng với dòng IP thứ hai |
+| kết quả: `g.gridy = 7` | lệch xuống một hàng trống |
+
+`GridBagLayout` cho phép nhiều component cùng nằm trong **một ô** `(gridx, gridy)`, và khi đó nó
+**chia đôi chiều cao ô đó cho các component** chứ không xếp chồng. Nên không có gì
+"giao nhau" theo nghĩa hình học — dấu hiệu chỉ là:
+
+- hai dòng IP bị **đẩy xuống rất thấp** (đo được `y = 308` và `y = 517`, thay vì `129` và `150` ngay dưới dòng `Ngày`),
+- vùng nội dung thư bị **bóp còn một nửa** chiều cao.
+
+Cách sửa đúng không phải sửa hai con số, mà là **bỏ hẳn con số ma**: cho `addHeaderRow()` nhận
+chỉ số hàng và một biến `row` tăng dần, rồi lấy `row`, `row + 1`, `row + 2` cho thân thư, nút
+và dòng kết quả. Từ đó thêm bao nhiêu dòng header cũng không còn chuyện phải nhớ cập nhật.
+
+**Và bài học về bộ kiểm thử — nó đã "xanh" một cách vô nghĩa.** `GeoCheck` và `InkCheck` kết luận
+`HINH HOC SAN` / `MOI CHU DEU THUC SU HIEN` ngay cả khi lỗi còn nguyên, vì cả hai chỉ **đăng nhập
+rồi đứng ở tab hộp thư**. Tab `Đọc thư` dùng `CardLayout` nên chỉ được bố trí (`validate`) khi
+thực sự hiện ra; component của nó có toạ độ `(0, 0)` và `isShowing() == false` nên bộ dò quét
+bỏ qua toàn bộ. Bài học chung:
+
+> Một phép kiểm chỉ có giá trị bằng **trạng thái** mà nó kiểm. Muốn kiểm một tab thì phải **mở
+> tab đó lên**, và phải chờ vòng poll đưa dữ liệu vào (dùng `waitUntil` thay vì `Thread.sleep`
+> cố định, vì nếu không có đủ thư thì danh sách rông và bước mở thư sẽ ném `NullPointerException`).
+
+Sau khi sửa, `GeoCheck` đăng nhập → gửi thư → **chờ thư xuất hiện trong hộp thư** → mở thư →
+mới đo cả 6 dòng header, và `InkCheck` bấm `doClick()` vào nút tab `Đọc thư` để chữ thật sự
+được vẽ ra.
+
+**Hai điểm phải nói thẳng khi bảo vệ bài**
+
+| Điểm | Giải thích |
+|---|---|
+| `Sender-IP` là dữ liệu tự khai | Máy gửi không tự chứng minh được IP của nó. Chỉ máy chủ mới biết chắc, vì IP đến từ tầng mạng chứ không từ nội dung request. Ta vẫn ghi đúng IP lấy từ `DatagramPacket` — **không** cho client tự khai trong phần body. |
+| `Receiver-IP` không chống được giả mạo | `FETCH` không xác thực (xem [§3.7.3](#373-hạn-chế-bảo-mật-của-phần-mở-rộng)), nên nó chỉ là số liệu thống kê, không phải danh tính đã xác minh. |
+
+Với hệ thống email thật, IP người gửi phải đến từ **tầng mạng** chứ không tin vào dữ liệu
+người dùng gửi — cùng nguyên tắc với [§2.6.2](#262--chống-giả-mạo-spf-dkim-dmarc): SPF/DKIM
+chính là để chứng minh *"tôi là tôi"* bằng bằng chứng từ bên thứ ba, chứ không phải bằng một
+trường tự khai trong chính thư.
 
 ---
 
