@@ -22,7 +22,9 @@ hỗ trợ 3 chức năng — tạo tài khoản, gửi email, đăng nhập và
 |---|---|---|
 | `LOGOUT` | Xác nhận thoát phiên, phía client xoá tài khoản + danh sách thư | Trả GUI về trạng thái trước khi đăng nhập |
 | `LIST` | Trả về danh sách tên file thư của một tài khoản | Client **poll 1 giây/lần** nên thư mới hiện realtime, không cần bấm tải lại |
+| `LIST\|sent` | Trả về danh sách **bản gửi** của chính tài khoản đó | Người gửi xem lại được mình đã gửi gì (xem [§6.1](#61-hộp-thư-đã-gửi)) |
 | `FETCH` | Trả về **nội dung** của một file thư | Để xem được thư; `LOGIN` chỉ trả *tên file* |
+| `FETCH\|sent` | Trả về nội dung một bản gửi | Đọc bản gửi mà không đụng bản trong hộp thư đến |
 
 > ⚠️ **`LIST` và `FETCH` không yêu cầu mật khẩu** (xem [§8.5](#85-cảnh-báo-bảo-mật-của-phần-mở-rộng)).
 > Đây là đánh đổi được chấp nhận có chủ ý để giữ protocol gọn; bài thực tế phải xác thực.
@@ -97,13 +99,18 @@ Cửa sổ client gồm:
 | Vùng | Nội dung |
 |---|---|
 | Cột trái — **Kết nối máy chủ** | Ô `Máy chủ` (mặc định `localhost`), ô `Cổng UDP` (mặc định `2346`)<br>Hàng 1: `Kết nối` · `Ngắt` — Hàng 2: `Đăng xuất` (**chỉ hiện sau khi đăng nhập**) |
-| Cột trái — **Hộp thư** | Danh sách tệp thư của tài khoản đang đăng nhập (**ẩn cho tới khi đăng nhập**). Thư mới có dấu `●` màu nhấn mạnh |
-| Cột phải — 4 tab | `Đăng ký` · `Đăng nhập` · `Gửi thư` · `Đọc thư` |
+| Cột trái — **Hộp thư** | **Thư đến** của tài khoản đang đăng nhập (**ẩn cho tới khi đăng nhập**). Thư mới có dấu `●` màu nhấn mạnh |
+| Cột phải — 5 tab | `Đăng ký` · `Đăng nhập` · `Gửi thư` · `Đọc thư` · `Thư đã gửi` |
 | Thanh tiêu đề | Đèn trạng thái + tài khoản/địa chỉ đang dùng |
 
 **Giao diện chỉ mở những gì dùng được.** Trước khi đăng nhập chỉ có 2 tab `Đăng ký` / `Đăng nhập`;
-thẻ `Hộp thư`, tab `Gửi thư`, tab `Đọc thư` và nút `Đăng xuất` đều **ẩn**. Sau khi đăng nhập thì
-cả 4 tab và thẻ `Hộp thư` mới hiện, đồng thời tự bật vòng poll 1 giây/lần.
+thẻ `Hộp thư`, tab `Gửi thư`, tab `Đọc thư`, tab `Thư đã gửi` và nút `Đăng xuất` đều **ẩn**.
+Sau khi đăng nhập thì cả 5 tab và thẻ `Hộp thư` mới hiện, đồng thời tự bật vòng poll 1 giây/lần.
+
+> **Vì sao hộp thư đến nằm ở cột trái mà hộp thư gửi lại là một tab?**
+> Hộp thư đến là thứ cần xem *liên tục*, nên đặt sẵn ở cột trái cho nó luôn chiếm
+> toàn bộ chiều cao còn trống. Hộp thư gửi chỉ cần xem lại khi cần, nên để thành
+> tab — mở ra xong thì ô nhập thư vẫn còn chỗ, không bị bóp còn một dải.
 
 `-Dfile.encoding=UTF-8` giúp Swing hiển thị đúng tiếng Việt có dấu trên cả Windows lẫn Linux.
 
@@ -120,7 +127,8 @@ cả 4 tab và thẻ `Hộp thư` mới hiện, đồng thời tự bật vòng 
 | **Đăng ký** | Tên tài khoản (3–32 ký tự: `a-z`, `A-Z`, `0-9`, `_`) + mật khẩu | `200` tạo tài khoản kèm thư chào mừng; `409` nếu tên đã tồn tại |
 | **Đăng nhập** | Tên tài khoản + mật khẩu | `200` kèm danh sách tệp thư, điền sẵn ô *Người gửi*; `401` nếu sai mật khẩu |
 | **Gửi thư** | Người nhận, tiêu đề, nội dung (nhiều dòng) | `200` kèm tên tệp vừa lưu; `404` nếu người nhận không tồn tại |
-| **Đọc thư** | Không cần nhập gì — bấm một tệp trong `Hộp thư` | Tự gọi `FETCH`, hiện header (`Từ` / `Đến` / `Tiêu đề` / `Ngày`) + nội dung; `404` nếu tệp không còn |
+| **Đọc thư** | Không cần nhập gì — bấm một tệp trong `Hộp thư` hoặc trong tab `Thư đã gửi` | Tự gọi `FETCH`, hiện header (`Từ` / `Đến` / `Tiêu đề` / `Ngày`) + nội dung; `404` nếu tệp không còn |
+| **Thư đã gửi** | Không cần nhập gì — xem/bấm một bản gửi của chính mình | Liệt kê mọi thư bạn đã gửi; bấm vào sẽ mở ở tab `Đọc thư` |
 
 Vùng kết quả dưới mỗi tab hiện mã trạng thái kèm thông điệp của máy chủ:
 xanh lá là thành công, đỏ là lỗi.
@@ -186,7 +194,58 @@ Thao tác tương ứng phía client:
 | 7 | Cửa sổ A | đăng nhập `alice`, gửi `Chào Bob` cho `bob` | `200 · Delivered to 'bob' as file mail_0002.txt` |
 | 8 | Cửa sổ B | **không làm gì cả**, chờ 1–2 giây | Tệp `mail_0002.txt` tự xuất hiện với dấu `●` |
 | 9 | Cửa sổ B | bấm `mail_0002.txt` | Sang tab `Đọc thư`, hiện đúng header và nội dung |
-| 10 | Cửa sổ B | bấm `Đăng xuất` | Thẻ `Hộp thư` và tab `Gửi thư`/`Đọc thư` biến mất, poll dừng |
+| 10 | Cửa sổ B | bấm `Đăng xuất` | Thẻ `Hộp thư` và tab `Gửi thư`/`Đọc thư`/`Thư đã gửi` biến mất, poll dừng |
+
+---
+
+## 6.1. Hộp thư đã gửi
+
+**Vấn đề:** bản gốc chỉ ghi thư vào thư mục **người nhận**. Người gửi gửi xong thì
+không xem lại được mình đã gửi gì — nhìn tệp trên máy chủ cũng không phải giao diện
+của chương trình, và nhiều khi máy chủ ở máy khác.
+
+**Cách sửa:** mỗi lần gửi thành công, máy chủ lưu thêm **một bản gửi** vào
+`data/<người gửi>/sent/`. Đó là *bản sao*, không phải "chuyển thư" — thư thật vẫn
+nằm trong hộp thư người nhận.
+
+| | Hộp thư đến (`data/<user>/`) | Hộp thư gửi (`data/<user>/sent/`) |
+|---|---|---|
+| Sinh ra khi nào | Người khác gửi cho mình | Chính mình gửi đi |
+| Có dấu `●` *chưa đọc* | **Có** | **Không** — thư mình tự gửi không có nghĩa "chưa đọc" |
+| Có dòng `Receiver-IP` | **Có** (ghi ở lần `FETCH` đầu) | **Không** — bản ghi lại phía người gửi, chưa ai "đọc" nó theo nghĩa đến |
+
+Gửi cho **chính mình** sẽ sinh **hai** tệp: một ở hộp thư đến, một ở hộp thư gửi
+(giống Gmail/Outlook). Đánh số tệp **độc lập theo từng hộp thư**, nên bản gửi đầu
+tiên có thể là `sent/mail_0001.txt` trong khi hộp thư đến đang ở `mail_0007.txt`.
+
+### Giao thức
+
+Ba lệnh bắt buộc của đề bài **không đổi một byte nào** — `REGISTER`, `LOGIN`, `SEND`
+vẫn y hệt. Phần mở rộng nằm ở `LIST`/`FETCH` nhận **thêm một trường tuỳ chọn**:
+
+| Lệnh | Cú pháp | Ví dụ |
+|---|---|---|
+| Liệt kê hộp thư đến (mặc định) | `LIST\|<user>` · `LIST\|<user>\|inbox` | `LIST\|bob` |
+| Liệt kê hộp thư gửi | `LIST\|<user>\|sent` | `LIST\|bob\|sent` |
+| Đọc thư đến (mặc định) | `FETCH\|<user>\|<file>` · `FETCH\|<user>\|inbox\|<file>` | `FETCH\|bob\|mail_0001.txt` |
+| Đọc bản gửi | `FETCH\|<user>\|sent\|<file>` | `FETCH\|bob\|sent\|mail_0001.txt` |
+
+`SEND` vẫn trả `200|Delivered to '<người nhận>' as file mail_000N.txt` — chỉ tên tệp
+**bên người nhận**. Người gửi không cần biết tên tệp bản gửi: vòng poll 1 giây/lần sẽ
+tự thấy nó trong `LIST|<user>|sent`.
+
+### Vài điểm bảo mật
+
+- Tên hộp thư được **whitelist** (`inbox`, `sent`), lạ thì `400`. Nhờ vậy
+  `LIST|bob|../../etc` không đọc được file ngoài thư mục dữ liệu.
+- Tên tài khoản **`sent` bị từ chối**, vì nó trùng tên hộp thư.
+- Bản gửi **không bao giờ ghi `Receiver-IP`**, kể cả khi bạn bấm xem nó ở tab `Đọc thư`.
+- `SEND` không xác thực người gửi (xem [§8.5](#85-cảnh-báo-bảo-mật-của-phần-mở-rộng)),
+  nên `from` là do client tự khai. Máy chủ **chỉ lưu bản gửi khi `from` là tài khoản
+  có thật** — nếu không, kẻ xấu gõ `SEND|khongco|...` sẽ tự tạo ra `data/khongco/`
+  và biến thư mục đó thành một "tài khoản" trong danh sách của máy chủ.
+- Ghi bản gửi là việc **phụ**: nếu ghi lỗi (hết chỗ, không có quyền) thì thư đến
+  vẫn giao thành công và `SEND` vẫn trả `200`, chỉ là không có bản gửi.
 
 ---
 
@@ -199,12 +258,20 @@ data/
 ├── accounts.dat                 # lưu hash SHA-256 mật khẩu
 ├── alice/
 │   ├── new_email.txt            # file chào mừng (tạo lúc REGISTER)
-│   └── mail_0001.txt            # email bob gửi cho alice
+│   ├── mail_0001.txt            # email bob gửi cho alice
+│   └── sent/                    # hộp thư đã gửi (tạo lúc REGISTER)
+│       └── mail_0001.txt        # bản gửi của alice
 └── bob/
     ├── new_email.txt
     ├── mail_0001.txt
-    └── mail_0002.txt
+    ├── mail_0002.txt
+    └── sent/
+        └── mail_0001.txt
 ```
+
+> `sent/` **tạo sẵn** lúc `REGISTER` nên danh sách hộp thư gửi luôn có sẵn hàng.
+> Tài khoản tạo từ trước khi có tính năng này thì thiếu thư mục này — `LIST|<user>|sent`
+> trả về danh sách rong thay vì báo lỗi, và thư mục được tạo khi gửi tệp đầu tiên.
 
 Nội dung một file email (đúng chuẩn RFC 5322):
 
@@ -260,8 +327,8 @@ RESPONSE:  <STATUS>|<message>\r\n
 | `SEND` | `SEND\|<from>\|<to>\|<subject>\|<body>` | `200\|Delivered to '<to>' as file mail_XXXX.txt` | `400\|…`<br>`404\|Recipient not found` |
 | `LOGIN` | `LOGIN\|<user>\|<pass>` | `200\|<f1>~<f2>~…~<fn>` | `400\|…`<br>`401\|Invalid password`<br>`404\|Account not found` |
 | `LOGOUT` | `LOGOUT` | `200\|Goodbye` | — |
-| `LIST` *(mở rộng)* | `LIST\|<user>` | `200\|<f1>~<f2>~…~<fn>` | `400\|…`<br>`404\|Account not found` |
-| `FETCH` *(mở rộng)* | `FETCH\|<user>\|<file>` | `200\|<nội dung thư đầy đủ>` | `400\|…`<br>`404\|File not found` |
+| `LIST` *(mở rộng)* | `LIST\|<user>` · `LIST\|<user>\|inbox` · `LIST\|<user>\|sent` | `200\|<f1>~<f2>~…~<fn>` | `400\|…` (tên sai / hộp thư lạ)<br>`404\|Account not found` |
+| `FETCH` *(mở rộng)* | `FETCH\|<user>\|<file>` · `FETCH\|<user>\|inbox\|<file>` · `FETCH\|<user>\|sent\|<file>` | `200\|<nội dung thư đầy đủ>` | `400\|…`<br>`404\|File not found` |
 
 ### 8.3. Bảng mã trả lời
 
@@ -352,9 +419,17 @@ mật khẩu, `LOGIN` trả về token có hạn, và `accounts.dat` đổi sang
 | Nội dung thư có `<BR>` / `\|` | `FETCH` trả về **xuống dòng thật**, `\|` giữ nguyên |
 | Client B đang đăng nhập, client A gửi thư cho B | Tệp mới tự xuất hiện ở B trong 1–2 giây, không cần bấm làm mới |
 | Bấm tệp trong `Hộp thư` | Sang tab `Đọc thư`, đúng `Từ`/`Đến`/`Tiêu đề`/`Ngày`/nội dung |
-| `Đăng xuất` | Ẩn `Hộp thư` + `Gửi thư` + `Đọc thư`, dừng poll, quay về tab `Đăng nhập` |
+| `Đăng xuất` | Ẩn `Hộp thư` + `Gửi thư` + `Đọc thư` + `Thư đã gửi`, dừng poll, quay về tab `Đăng nhập` |
 | Bấm `Gửi thư` khi chưa đăng nhập | Báo lỗi **ở tab `Gửi thư`**, không lẫn sang tab `Đăng ký` |
 | Tài khoản có thư mục nhưng mất dòng hash trong `accounts.dat` | `401` — không bỏ qua xác thực |
+| Gửi thư cho người khác | Thư tới hộp thư đến của họ **và** bản gửi vào `sent/` của mình |
+| Gửi cho chính mình | **Hai** tệp: một ở hộp thư đến, một ở hộp thư gửi |
+| `LIST\|<user>\|sent` | Chỉ tên tệp bản gửi, **không** lẫn tệp hộp thư đến, không lộ file tạm |
+| `FETCH\|<user>\|sent\|<file>` | Đúng nội dung bản gửi; **không** gán `Receiver-IP` vào file |
+| Hộp thư lạ (`bogus`) hoặc đường dẫn (`..%2f..`) | `400`, không đọc được file ngoài `data/` |
+| Đăng ký tên tài khoản `sent` | `400` — trùng tên hộp thư |
+| `SEND` với `from` là tài khoản bịa đặt | `200` cho người nhận, nhưng **không** tạo thư mục tài khoản giả |
+| Tài khoản tạo từ trước (thiếu thư mục `sent/`) | `LIST\|<user>\|sent` trả danh sách rong, không lỗi |
 | Restart server | Tài khoản và email giữ nguyên |
 
 ### Kiểm thử tự động trên tầng GUI
@@ -369,7 +444,7 @@ Script tự biên dịch sạch `src/` vào `build/`, biên dịch `test/` vào 
 từng công cụ và báo cáo. Riêng từng công cụ thì chạy tay:
 
 ```bash
-java -Dfile.encoding=UTF-8 -cp build:build-test E2E        # 100 check
+java -Dfile.encoding=UTF-8 -cp build:build-test E2E        # 155 check
 java -Dfile.encoding=UTF-8 -cp build:build-test GeoCheck MailClientFrame 1180 740 login
 ```
 
@@ -378,7 +453,7 @@ java -Dfile.encoding=UTF-8 -cp build:build-test GeoCheck MailClientFrame 1180 74
 phản hồi hiện trên màn hình, thay vì chỉ gọi hàm lõi. Server được mở trong cùng JVM nên
 không cần terminal riêng.
 
-Kết quả thu được: **100/100 PASS**, chia làm 10 nhóm (A–K):
+Kết quả thu được: **155/155 PASS**, chia làm các nhóm (A–M):
 
 | Nhóm | Nội dung |
 |---|---|
@@ -389,9 +464,11 @@ Kết quả thu được: **100/100 PASS**, chia làm 10 nhóm (A–K):
 | E | **Realtime**: client B thấy thư client A gửi, đo thời gian thực tế |
 | F | Tài khoản thẻ mục nhưng mất dòng hash → `401`; không đọc được thư của tài khoản ngoài danh sách |
 | G | `LOGOUT`: xác nhận `200`, xoá phiên, xoá danh sách thư |
-| H | **Cảm giác GUI**: 4/2 tab theo trạng thái, ẩn/hiện thẻ hộp thư, bấm thư ra nội dung, đăng xuất |
+| H | **Cảm giác GUI**: 5/2 tab theo trạng thái, ẩn/hiện thẻ hộp thư, bấm thư ra nội dung, đăng xuất |
 | I | Server vẫn phản hồi sau khi client gửi lệnh lỗi |
 | K | Người gửi xem được thư mình vừa gửi; thư đến giữa lúc đang đọc không làm mất nội dung đang xem; hai dòng IP trong file thư và trên GUI |
+| L | **Hộp thư gửi**: bản gửi nằm đúng thư mục, `LIST`/`FETCH` có folder, tự gửi sinh 2 tệp, bản gửi không có `Receiver-IP`, chặn tên `sent`, chặn folder lạ, `from` giả không tạo tài khoản |
+| M | **Tab `Thư đã gửi`**: hiện đủ 5 tab sau đăng nhập, bản gửi **không** lọt vào hộp thư đến, bấm bản gửi ra tab `Đọc thư` với nhãn đúng hộp thư, đăng xuất xoá cả hai danh sách |
 
 > `build/` là sản phẩm, `build-test/` chỉ là class của bộ kiểm thử — không cần
 > phân phối đi kèm.
@@ -422,9 +499,16 @@ Hai công cụ bổ sung, cùng nguyên tắc: **kích thước component không
 | `GeoCheck` | So `preferredSize` với kích thước thật để phát hiện chữ bị cắt, và quét cặp component xem có chồng lấn không |
 
 Cả hai chạy được ở chế độ **trước** và **sau** đăng nhập (thêm đối số `login`) — sau đăng nhập
-mới kiểm được các tab vốn bị ẩn. Kết quả: `InkCheck` xanh ở 14/14 component của server và
-43–53 component của client; `GeoCheck` xanh ở `1000x640`, `1100x700`, `1180x740`, `1280x820`,
-cả trước và sau đăng nhập.
+mới kiểm được các tab vốn bị ẩn.
+
+> Card của mỗi tab nằm trong `CardLayout`, nên **chỉ tab đang mở mới được vẽ ra**. Vì vậy
+> `InkCheck` chạy **từng tab một**: chuyển sang tab, đợi giao diện ổn định, rồi mới đếm
+> pixel. Nếu chỉ quét một lần ở tab mặc định thì các tab khác không component nào
+> đang hiện ⇒ không được kiểm gì, và một tab hỏng vẫn ra kết quả "xanh".
+
+Kết quả: `InkCheck` xanh ở 14/14 component của server, 94 component của client trước đăng
+nhập và 244 component sau đăng nhập (đã gồm cả tab `Thư đã gửi`); `GeoCheck` xanh ở
+`1000x640`, `1100x700`, `1180x740`, `1280x820`, cả trước và sau đăng nhập.
 
 > `GeoCheck` **không** bắt được lỗi `FlowLayout` làm component xuống dòng — vì chúng không
 > chồng lấn, chỉ nằm khác hàng. Loại lỗi đó phải nhìn tọa độ `y` của từng nút; đó là lý do
@@ -466,12 +550,12 @@ print(rq("LOGOUT\r\n"))                         # 200
 | File | Trách nhiệm |
 |---|---|
 | `src/Protocol.java` | Định nghĩa hằng số, escape/unescape, tách & ghép request/response, mã trạng thái |
-| `src/Mailbox.java` | Nghiệp vụ lưu trữ: tạo account, hash SHA-256, ghi/đọc file email |
+| `src/Mailbox.java` | Nghiệp vụ lưu trữ: tạo account, hash SHA-256, ghi/đọc file email, hai hộp thư `inbox`/`sent` |
 | `src/MailServer.java` | UDP socket, listener thread, worker pool, điều phối request → `Mailbox`, đẩy log qua `Consumer<String>` |
 | `src/MailClient.java` | Socket UDP phía client, gửi request, nhận & phân tích response |
 | `src/Theme.java` | Design token: màu, font, khoảng cách, bo góc; nút phẳng tự vẽ |
 | `src/MailServerFrame.java` | Cửa sổ server: cấu hình, Start/Stop, nhật ký real-time |
-| `src/MailClientFrame.java` | Cửa sổ client: kết nối, hộp thư, 4 tab REGISTER / LOGIN / SEND / READ, vòng poll, đăng xuất |
+| `src/MailClientFrame.java` | Cửa sổ client: kết nối, hộp thư đến, 5 tab REGISTER / LOGIN / SEND / READ / SENT, vòng poll, đăng xuất |
 
 ### Vài điểm kỹ thuật đáng chú ý
 

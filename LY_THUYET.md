@@ -1571,7 +1571,7 @@ Chạy cả trước và sau đăng nhập, vì trước đăng nhập các tab 
 
 ---
 
-## 3.7 Hai mở rộng tự thêm: `LIST`, `FETCH` (và vòng poll)
+## 3.7 Hai mở rộng tự thêm: `LIST`, `FETCH` (vòng poll, hộp thư gửi)
 
 ### 3.7.1 Vì sao cần thêm
 
@@ -1596,6 +1596,7 @@ UDP không có kết nối, không có kênh đi, không có cơ chế push. Nê
 | Thread | daemon, `ScheduledExecutorService` | Daemon để đóng cửa sổ không bị treo bởi executor |
 | Cập nhật model | chỉ khi `List.equals` cho thấy khác | Không dựng lại `JList` mỗi giây — sẽ nhảy, mất vị trí chọn, tốn CPU |
 | Đánh dấu chưa đọc | `●` chỉ cho tên **mới xuất hiện** | Người dùng cần biết cái nào mới; xoá `●` khi bấm xem |
+| Poll cả hai hộp thư | `LIST\|<user>` + `LIST\|<user>\|sent` trong cùng một vòng | Bản gửi có thể do máy khác tạo ra; nếu chỉ poll hộp thư đến thì tab "Thư đã gửi" phải đăng nhập lại mới thấy (§3.7.7) |
 
 Ba lỗi dễ gặp khi viết vòng poll, đều đã xử lý:
 
@@ -1643,7 +1644,8 @@ hành để thống kê, không phải cơ chế xác thực danh tính** — c�
 ### 3.7.4 Giao diện chỉ mở những gì dùng được
 
 Trước khi đăng nhập chỉ hiện `Đăng ký` + `Đăng nhập`; thẻ `Hộp thư`, tab `Gửi thư`, tab
-`Đọc thư` và nút `Đăng xuất` đều **ẩn**. Sau khi đăng nhập thì mới hiện đủ và bật poll.
+`Đọc thư`, tab `Thư đã gửi` và nút `Đăng xuất` đều **ẩn**. Sau khi đăng nhập thì mới hiện đủ
+5 tab và bật poll.
 
 Lý do phải làm vậy: bấm được một nút mà không kết nối là điều hướng người dùng vào
 nhánh lỗi. Còn khi đã đăng nhập mà vẫn thấy đầy đủ thì dễ quên mình còn đang dùng tài
@@ -1823,6 +1825,115 @@ người dùng gửi — cùng nguyên tắc với [§2.6.2](#262--chống-giả
 chính là để chứng minh *"tôi là tôi"* bằng bằng chứng từ bên thứ ba, chứ không phải bằng một
 trường tự khai trong chính thư.
 
+### 3.7.7 Hộp thư "đã gửi": vì sao phải lưu một bản gửi, và những lỗi nó kéo theo
+
+Kịch bản người dùng báo lần thứ hai: *người gửi không xem được thư mình đã gửi*. Nguyên nhân
+ở `Mailbox.deliverMail()`: nó ghi thư **vào thư mục người nhận** và không ghi gì bên người gửi.
+Với email thật thì điều đó không chấp nhận được — Gmail/Outlook đều giữ một bản ở *Sent*.
+
+#### Vì sao lưu **bản sao** chứ không "chuyển thư"
+
+Phải phân biệt hai việc:
+
+| | Làm đúng | Làm sai |
+|---|---|---|
+| Thư thật | Vẫn nằm trong hộp thư **người nhận** | Bị lấy đi khỏi người nhận (thư bay!) |
+| Bản ghi | Thêm một file ở `data/<người gửi>/sent/` | Không có gì |
+
+Gửi cho **chính mình** sẽ sinh **hai** tệp ở hai thư mục khác nhau — giống hệt hành vi email
+thật. Và vì đánh số tệp độc lập theo từng hộp thư, `sent/mail_0001.txt` có thể tồn tại song
+song với hộp thư đến đang ở `mail_0007.txt`; đây là chuyện bình thường, không phải lỗi.
+
+#### Bản gửi không được ghi `Receiver-IP`
+
+Đây là điểm dễ làm sai nhất. Cơ chế ghi `Receiver-IP` (§3.7.6) chạy ở `FETCH`: lần đầu ai đó
+đọc tệp thì máy chủ ghi IP của họ vào. Nhưng bản gửi là **bản ghi lại phía người gửi** — người
+gửi tự biết mình gửi gì, chưa có ai "đọc" nó theo nghĩa đến. Nếu áp cơ chế đó vào bản gửi thì:
+
+- bấm xem bản gửi sẽ làm tệp **tự thay đổi trên đĩa** mỗi lần mở;
+- nhãn "người nhận" trong GUI sẽ hiện chính người gửi, gây hiểu nhầm vừa tự nhận vừa tự gửi.
+
+Vì vậy `readMailWithReceiverIp` **trả nguyên văn** nếu hộp thư là `sent`, không ghi gì.
+
+#### Mở rộng `LIST`/`FETCH` mà không phá giao thức bắt buộc
+
+Ba lệnh của đề bài (`REGISTER`, `LOGIN`, `SEND`) giữ **nguyên văn**, kể cả response của
+`SEND` — vẫn chỉ trả tên tệp **bên người nhận**. Người gửi không cần biết tên tệp bản gửi:
+vòng poll sẽ tự thấy nó trong `LIST|<user>|sent`.
+
+Trường mới là **tuỳ chọn ở cuối**:
+
+```
+LIST|<user>            ≡ LIST|<user>|inbox        (tương thích ngược)
+LIST|<user>|sent
+FETCH|<user>|<file>     ≡ FETCH|<user>|inbox|<file>
+FETCH|<user>|sent|<file>
+```
+
+> Rút kinh nghiệm thiết kế protocol: **thêm tuỳ chọn, không thêm lệnh mới**. Nếu tạo lệnh
+> `LISTSENT|<user>` thì client cũ vẫn chạy, nhưng client mới thì phải nhánh theo — còn
+> trường tuỳ chọn thì cả hai cùng dùng một lệnh.
+
+#### ⚠️ Ba lỗi thật mà tính năng này lộ ra
+
+**Lỗi 1 — `inbox` là thư mục gốc, không phải thư mục con.** Hàm ánh xạ tên hộp thư sang
+đường dẫn ban đầu viết `return base.resolve("inbox")`, tức là `data/alice/inbox`. Trong khi
+thực tế hộp thư đến **chính là** `data/alice/`. Hậu quả: `LIST` mặc định trả rỗng và `FETCH`
+trả `404` cho mọi tài khoản cũ — **37/100 test đỏ**. Sửa bằng cách hỏi đúng câu hỏi: hộp thư
+nào *là* thư mục gốc?
+
+```java
+// "inbox" không phải thu muc con: no chính là thu muc goc cua tai khoan.
+return FOLDER_INBOX.equals(safe) ? base : base.resolve(safe);
+```
+
+Cùng lúc đó, hàm đổi từ "im lặng trả về thư mục gốc" sang **ném `IllegalArgumentException`**
+cho tên hộp thư lạ. Nếu vẫn im lặng, một lệnh `LIST|alice|../../etc` sẽ *chạy* và trả về
+hộp thư đến thay vì báo lỗi — im lặng làm lỗi trở nên khó tìm hơn.
+
+**Lỗi 2 — file tạm lọt vào danh sách.** Bản gửi được ghi theo kiểu atomic: ghi file tạm
+`.pending.txt` rồi mới đổi tên thành `mail_NNNN.txt` cuối cùng. Nhưng `listFiles()` liệt kê
+**mọi** file thường trong thư mục, nên nếu client poll đúng lúc ghi, nó sẽ thấy
+`.pending.txt` như một thư mới. Sửa bằng cách lọc file tạm ở đúng chỗ liệt kê, đồng thời
+giữ nguyên `new_email.txt` (thư chào mừng **phải** hiện).
+
+**Lỗi 3 — `listSent()` cập nhật cache của thư đến, không phải của hộp thư gửi.** Hàm này ban
+đầu chỉ trả response mà **không** cập nhật `currentSentList`, trong khi `list()` thì có cập
+nhật `currentMailList`. Hậu quả: vòng poll so sánh `before` với `after` luôn thấy bằng nhau
+⇒ **tab "Thư đã gửi" không bao giờ tự làm mới**, dù giao diện hiển thị đúng hình dạng.
+Đây chính là loại lỗi mà `GeoCheck`/`InkCheck` **không** bắt được (chữ vẫn hiện, ô vẫn đúng
+kích thước) và chỉ lộ ra khi test so sánh *trạng thái cache* chứ không chỉ so kết quả hiển thị.
+
+Cách chữa là **xoá bớt API**: ban đầu có ba hàm làm ba việc (`listSent`, `pollSent`,
+`fetchSentList`) với ba hành vi khác nhau. Đã bỏ `pollSent` và quy tắc còn lại là:
+
+> Mỗi hàm `list*` vừa trả response, vừa cập nhật cache của đúng hộp thư đó.
+
+> Bài học: khi phải viết ba hàm cho hai việc, hãy nghĩ lại về việc thiết kế. Ba hàm có ba
+> hành vi khác nhau là dấu hiệu chắc chắn rằng quy tắc chưa được phát biểu rõ.
+
+#### Một lỗi bảo mật: đừng để `from` tạo tài khoản giả
+
+`SEND` **không xác thực** người gửi (§3.7.3), nên `from` chỉ là chuỗi client tự khai. Nếu
+`saveSentCopy()` cứ `createDirectories()` đi, thì lệnh `SEND|khongco|bob|...` sẽ tạo ra
+`data/khongco/sent/` — và vì `listAccounts()` coi **mọi thư mục** là một tài khoản, thư mục đó
+lọt vào danh sách tài khoản của máy chủ. Tức là một lệnh gửi thư bình thường đã tạo được
+tài khoản mới trên máy chủ.
+
+Sửa bằng cách yêu cầu `from` phải là tài khoản có thật — kiểm tra **cả** thư mục **và** dòng
+hash trong `accounts.dat`, chứ không chỉ thư mục:
+
+```java
+private boolean hasAccount(String username) {
+    return accountExists(username) && loadPassword(username) != null;
+}
+```
+
+Lưu ý đây **không** chặn được việc giả mạo một tài khoản *đã tồn tại* — đó là hạn chế đã biết
+của `SEND` không xác thực, chấp nhận được trong phạm vi bài. Bài học là về **mặc định an toàn**:
+khi thêm một chức năng *ghi dữ liệu mới*, phải hỏi nó ghi vào đâu và ai được phép ghi, chứ không
+chỉ "ghi thêm cho tiện".
+
 ---
 
 # PHẦN 4 — TỔNG HỢP
@@ -1838,6 +1949,8 @@ trường tự khai trong chính thư.
 | Xác thực | `USER` / `PASS` (POP3), `LOGIN` (IMAP) | 110/143 | `LOGIN\|<user>\|<pass>` |
 | Liệt kê mail | `LIST` (POP3), `SELECT` (IMAP) | 110/143 | `LOGIN` trả `f1~f2~..~fn`; thêm lệnh `LIST\|<user>` để poll |
 | Đọc nội dung thư | `RETR` (POP3), `FETCH ... BODY[]` (IMAP) | 110/143 | Thêm lệnh `FETCH\|<user>\|<file>` |
+| Hộp thư đã gửi | Thư mục `Sent` (IMAP), `APPEND` vào mbox `Sent` | 143 | `data/<user>/sent/`, liệt kê/đọc bằng `LIST\|<user>\|sent` và `FETCH\|<user>\|sent\|<file>` — §3.7.7 |
+| `Message-ID` chống trùng | `Message-ID` + `UID` | — | `Message-ID` sinh từ timestamp + số thứ tự thread |
 | Định dạng message | RFC 5322 | — | Header `From/To/Subject/Date` trong file |
 | Đặt tên file lưu trữ | Maildir | — | `mail_0001.txt` |
 | Ranh giới message | Dấu `.` đơn lẻ | — | `\r\n` cuối message |

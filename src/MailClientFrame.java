@@ -101,7 +101,7 @@ public class MailClientFrame extends JFrame {
     private int currentTab = TAB_REGISTER;
     private java.util.List<Theme.FlatButton> tabButtons;
 
-    /** Chi so cua 4 tab theo thu tu khai bao trong {@link #buildTabs()}. */
+    /** Chi so cua 5 tab theo thu tu khai bao trong {@link #buildTabs()}. */
     /** Hien thi khi file thu khong co dong IP (thu tao truoc khi tinh nang nay co). */
     private static final String OLD_MAIL_MARK = "(thư cũ)";
 
@@ -109,6 +109,11 @@ public class MailClientFrame extends JFrame {
     private static final int TAB_LOGIN = 1;
     private static final int TAB_SEND = 2;
     private static final int TAB_READ = 3;
+    private static final int TAB_SENT = 4;
+
+    /** Nhan hien thi hop thu dang xem trong tab "Doc thu". */
+    private static final String LABEL_INBOX = "hộp thư đến";
+    private static final String LABEL_SENT = "thư đã gửi";
 
     /**
      * Chu ky poll hop thu (ms).
@@ -127,6 +132,27 @@ public class MailClientFrame extends JFrame {
     private JPanel mailboxCard;
 
     private final JList<String> mailboxList = new JList<>(mailboxModel);
+
+    // ==================== HOP THU "DA GUI" ====================
+
+    /**
+     * Danh sach thu da gui (hop thu {@code sent}). Tach rieng khoi
+     * {@link #mailboxList} vi day la hai danh sach doc lap cua may chu.
+     */
+    private final DefaultListModel<String> sentModel = new DefaultListModel<>();
+    private final JList<String> sentList = new JList<>(sentModel);
+    private final javax.swing.JLabel sentCount = Theme.label("");
+
+    /**
+     * Hop thu dang xem trong tab "Doc thu".
+     *
+     * <p>Viet {@code null} khi chua mo thu nao. De {@link #poll()} biet danh sach
+     * nao dang hien thi, nen khong vo tinh tai lai thu nguoi dang doc.
+     */
+    private String readFolder = Mailbox.FOLDER_INBOX;
+
+    /** Nhan cho biet thu dang xem lay tu hop thu nao. */
+    private final javax.swing.JLabel readFolderLabel = Theme.label("");
 
     /** Ten file chua doc — dung de to dam trong danh sach hop thu. */
     private final Set<String> unread = new HashSet<>();
@@ -320,7 +346,9 @@ public class MailClientFrame extends JFrame {
         // KHONG dat setPreferredSize o day: FlatButton da ghi de
         // getPreferredSize() de tu tinh be rong theo do dai chu, nen gan
         // kich thuoc co dinh se bi bo qua.
-        String[] titles = {"Đăng ký", "Đăng nhập", "Gửi thư", "Đọc thư"};
+        // Thu tu phai khop voi hang so TAB_*: 0..4. "Thu da gui" o cuoi vi
+        // nhung nguoi dung it kiem tra lai thu da gui hon doc thu den.
+        String[] titles = {"Đăng ký", "Đăng nhập", "Gửi thư", "Đọc thư", "Thư đã gửi"};
         for (int i = 0; i < titles.length; i++) {
             final int index = i;
             Theme.FlatButton b = new Theme.FlatButton(titles[i], false);
@@ -333,6 +361,7 @@ public class MailClientFrame extends JFrame {
         tabCards.add(buildLoginTab(), "tab" + TAB_LOGIN);
         tabCards.add(buildSendTab(), "tab" + TAB_SEND);
         tabCards.add(buildReadTab(), "tab" + TAB_READ);
+        tabCards.add(buildSentTab(), "tab" + TAB_SENT);
 
         wrap.add(strip, BorderLayout.NORTH);
         wrap.add(tabCards, BorderLayout.CENTER);
@@ -357,6 +386,7 @@ public class MailClientFrame extends JFrame {
         if (tabButtons != null) {
             tabButtons.get(TAB_SEND).setVisible(on);
             tabButtons.get(TAB_READ).setVisible(on);
+            tabButtons.get(TAB_SENT).setVisible(on);
         }
         if (mailboxCard != null) {
             mailboxCard.setVisible(on);
@@ -651,6 +681,92 @@ public class MailClientFrame extends JFrame {
      * Noi dung thu duoc tach thanh cac truong header {@code From/To/Subject/Date}
  * *va* phan body, dung dinh dang file ma {@code Mailbox} ghi ra (RFC 5322).
      */
+    /**
+     * Tab "Thu da gui": danh sach ban gui cua chinh tai khoan.
+     *
+     * <p><b>Vi sao tach tab rieng chu khong ghep vao hop thu den:</b> hai danh sach
+     * nay khac nhau ve <b>nghia</b> — thu den la thu <i>den</i> ta, thu da gui la
+     * thu <i>ta</i> gui. Gop chung se bao loi danh dau "chua doc" sai (thu ta vua
+     * gui cho chinh minh van phai la thu den), va nguoi dung khong phan biet duoc
+     * thu nao minh da gui.
+     *
+     * <p>Khong co dau "chua doc": ban gui la thu ta tu doc va tu gui, khong bao gio
+     * co trang thai chua xem.
+     */
+    private JPanel buildSentTab() {
+        JPanel card = new JPanel(new BorderLayout());
+        card.setOpaque(false);
+        card.setBorder(Theme.rounded(Theme.SURFACE, Theme.LINE, Theme.R_MEDIUM, Theme.S3));
+
+        JPanel head = new JPanel(new BorderLayout());
+        head.setOpaque(false);
+        head.add(Theme.labelStrong("THƯ ĐÃ GỬI"), BorderLayout.WEST);
+        sentCount.setFont(Theme.MICRO);
+        sentCount.setForeground(Theme.INK_3);
+        head.add(sentCount, BorderLayout.EAST);
+        head.setToolTipText("Mỗi thư bạn gửi đều được máy chủ lưu một bản ở đây, "
+                + "nên bạn luôn xem lại được mình đã gửi gì.");
+        head.setBorder(BorderFactory.createEmptyBorder(0, 0, Theme.S2, 0));
+
+        sentList.setFont(Theme.MONO);
+        sentList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        sentList.setBackground(Theme.SUNKEN);
+        sentList.setForeground(Theme.INK_3);
+        sentList.setOpaque(true);
+        sentList.setBorder(BorderFactory.createEmptyBorder(Theme.S1, Theme.S2,
+                Theme.S1, Theme.S2));
+        sentList.setCellRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value,
+                    int index, boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index,
+                        isSelected, cellHasFocus);
+                if (isSelected) {
+                    setBackground(Theme.ACCENT);
+                    setForeground(Theme.SURFACE);
+                } else {
+                    setBackground(Theme.SUNKEN);
+                    setForeground(Theme.INK_3);
+                }
+                // Can thang hang voi danh sach hop thu den: hai danh sach cung
+                // thu tu doc va cung font nen khoang trong o ben phai phai bang nhau.
+                setText("   " + value);
+                setBorder(BorderFactory.createEmptyBorder(Theme.S1 - 2, Theme.S2 - 2,
+                        Theme.S1 - 2, 0));
+                return this;
+            }
+        });
+        sentList.addListSelectionListener(e -> {
+            if (e.getValueIsAdjusting()) return;
+            if (restoringSelection) return;
+            String file = sentList.getSelectedValue();
+            if (file != null) doFetch(Mailbox.FOLDER_SENT, file);
+        });
+
+        JScrollPane scroll = new JScrollPane(sentList,
+                JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
+                JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.setBorder(Theme.hairline(Theme.LINE));
+        scroll.setOpaque(false);
+        scroll.getViewport().setOpaque(false);
+        scroll.getVerticalScrollBar().setOpaque(false);
+
+        JPanel holder = new JPanel(new BorderLayout());
+        holder.setOpaque(false);
+        holder.add(scroll, BorderLayout.CENTER);
+
+        card.add(head, BorderLayout.NORTH);
+        card.add(holder, BorderLayout.CENTER);
+
+        JPanel p = tabPanel();
+        int row = 0;
+        addHint(p, row++,
+                "Máy chủ lưu một bản của mỗi thư bạn gửi, nên bạn xem lại được thư đã gửi.");
+        addSpacer(p, row++);
+        wide(p, row++, card);
+        return p;
+    }
+
     private JPanel buildReadTab() {
         JPanel p = tabPanel();
 
@@ -659,6 +775,12 @@ public class MailClientFrame extends JFrame {
         head.add(Theme.labelStrong("NỘI DUNG THƯ"), BorderLayout.WEST);
         head.add(readFileName, BorderLayout.EAST);
         readFileName.setFont(Theme.MONO);
+        // Chi ro thu dang xem lay tu hop thu nao. Dat o BorderLayout.CENTER nen
+        // khong lay bat ky thuoc tinh nao cua WEST/EAST (ca tieu de va ten file
+        // deu can nguyen hinh dang).
+        readFolderLabel.setFont(Theme.MICRO);
+        readFolderLabel.setForeground(Theme.INK_3);
+        head.add(readFolderLabel, BorderLayout.CENTER);
         head.setBorder(BorderFactory.createEmptyBorder(0, 0, Theme.S2, 0));
 
         GridBagConstraints g = baseG();
@@ -758,6 +880,7 @@ public class MailClientFrame extends JFrame {
         readDate.setText("");
         readSenderIp.setText("");
         readReceiverIp.setText("");
+        readFolderLabel.setText("");
         readBody.setText("");
         readResult.setText("");
     }
@@ -943,6 +1066,9 @@ public class MailClientFrame extends JFrame {
         mailboxModel.clear();
         mailboxList.clearSelection();
         updateMailboxCount();
+        sentModel.clear();
+        sentList.clearSelection();
+        sentCount.setText("");
         setLoggedInUi(false);
         setResult(logResult, "200", "Đã ngắt kết nối.");
     }
@@ -1019,6 +1145,8 @@ public class MailClientFrame extends JFrame {
                         unread.clear();
                         unread.addAll(client.getCurrentMailList());
                         refreshMailbox();
+                        // MailClient.login() da lay san danh sach "da gui".
+                        refreshSentList();
                         setLoggedInUi(true);
                         selectTab(TAB_SEND);
                         startPolling();
@@ -1064,6 +1192,9 @@ public class MailClientFrame extends JFrame {
                     mailboxModel.clear();
                     mailboxList.clearSelection();
                     updateMailboxCount();
+                    sentModel.clear();
+                    sentList.clearSelection();
+                    sentCount.setText("");
                     setLoggedInUi(false);
                     setBusy(false);
                     setResult(logResult, "200", "Đã đăng xuất.");
@@ -1078,15 +1209,28 @@ public class MailClientFrame extends JFrame {
      * @param fileName ten file trong hop thu
      */
     private void doFetch(String fileName) {
+        doFetch(Mailbox.FOLDER_INBOX, fileName);
+    }
+
+    /**
+     * Tai noi dung 1 file thu va do len tab "Doc thu".
+     *
+     * @param folder   {@code inbox} hay {@code sent} — quyet dinh lenh {@code FETCH}
+     *                 nao dung, va dong "da doc" chi co y nghia o hop thu den.
+     * @param fileName ten file can xem
+     */
+    private void doFetch(String folder, String fileName) {
         if (!begin(readResult)) return;
         String user = client.getCurrentUser();
+        boolean isInbox = !Mailbox.FOLDER_SENT.equals(folder);
 
         setResult(readResult, "", "Đang tải " + fileName + "…");
 
         new SwingWorker<String[], Void>() {
             @Override
             protected String[] doInBackground() throws Exception {
-                return client.fetch(user, fileName);
+                return isInbox ? client.fetch(user, fileName)
+                               : client.fetchSent(user, fileName);
             }
 
             @Override
@@ -1094,9 +1238,13 @@ public class MailClientFrame extends JFrame {
                 try {
                     String[] r = get();
                     if (Protocol.isOk(r[0])) {
-                        unread.remove(fileName);
+                        // Chi thu den moi co "chua doc". Ban gui thi ta vua tu gui,
+                        // danh dau chua doc se khong bao gio tat.
+                        if (isInbox) unread.remove(fileName);
+                        readFolder = folder;
                         MailView v = parseMail(r[1]);
                         readFileName.setText(fileName);
+                        readFolderLabel.setText(isInbox ? LABEL_INBOX : LABEL_SENT);
                         readFrom.setText(v.from());
                         readTo.setText(v.to());
                         readSubject.setText(v.subject());
@@ -1109,7 +1257,7 @@ public class MailClientFrame extends JFrame {
                         setResult(readResult, r[0], "Đã tải " + fileName);
                         // Danh sach phai ve lai de dong chua doc chuyen thanh
                         // da doc ngay tren man hinh.
-                        mailboxList.repaint();
+                        if (isInbox) mailboxList.repaint();
                     } else {
                         setResult(readResult, r[0], r[1]);
                     }
@@ -1156,7 +1304,9 @@ public class MailClientFrame extends JFrame {
         if (c == null || !c.isLoggedIn() || busy) return;
 
         List<String> before = c.getCurrentMailList();
+        List<String> beforeSent = c.getCurrentSentList();
         List<String> after;
+        boolean sentOk;
         try {
             String[] r = c.list(c.getCurrentUser());
             // Poll that bai (may chua chay, mat ket noi) thi im lang bo qua —
@@ -1164,10 +1314,18 @@ public class MailClientFrame extends JFrame {
             // khong nen thay bang loi lap lai moi giay.
             if (!Protocol.isOk(r[0])) return;
             after = c.getCurrentMailList();
+
+            // Hop thu "da gui" cung can poll: nguoi dung co the gui thu tu may
+            // khac (dien thoai, may khong), va thu do chi xuat hien o day.
+            // That bai thi giu danh sach cu — khong lam anh huong thu den.
+            // listSent() tu cap nhat currentSentList khi thanh cong.
+            sentOk = Protocol.isOk(c.listSent(c.getCurrentUser())[0]);
         } catch (IOException e) {
             return;
         }
-        if (after.equals(before)) return;
+        boolean inboxChanged = !after.equals(before);
+        boolean sentChanged = sentOk && !c.getCurrentSentList().equals(beforeSent);
+        if (!inboxChanged && !sentChanged) return;
 
         List<String> fresh = new ArrayList<>(after);
         fresh.removeAll(before);
@@ -1178,7 +1336,12 @@ public class MailClientFrame extends JFrame {
             if (client == null || !client.isLoggedIn()) return;
             unread.addAll(fresh);
             refreshMailbox();
-            setResult(logResult, "200", "Bạn có " + fresh.size() + " thư mới.");
+            if (sentChanged) refreshSentList();
+            if (inboxChanged) {
+                setResult(logResult, "200", "Bạn có " + fresh.size() + " thư mới.");
+            } else {
+                setResult(logResult, "200", "Thư đã gửi của bạn vừa được lưu.");
+            }
         });
     }
 
@@ -1311,6 +1474,20 @@ public class MailClientFrame extends JFrame {
             restoringSelection = false;
         }
         updateMailboxCount();
+    }
+
+    /** Do lai danh sach "thu da gui" tu danh sach client vua cap nhat. */
+    private void refreshSentList() {
+        if (client == null) return;
+        List<String> files = client.getCurrentSentList();
+        restoringSelection = true;
+        try {
+            sentModel.clear();
+            for (String f : files) sentModel.addElement(f);
+        } finally {
+            restoringSelection = false;
+        }
+        sentCount.setText(files.isEmpty() ? "chưa có thư" : files.size() + " tệp");
     }
 
     private void updateMailboxCount() {

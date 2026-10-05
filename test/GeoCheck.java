@@ -96,8 +96,27 @@ public class GeoCheck {
                 }
                 GuiHelper.openMail(box[0], newest[0]);
                 Thread.sleep(600);
-                System.out.println("  (da dang nhap va mo thu " + newest[0]
-                        + ": kiem ca 4 tab, gom ca 6 dong header cua tab Doc thu)");
+
+                // Mo ca hop thu "da gui" roi sang tab "Doc thu" tu hop thu do:
+                // tab moi co the bi keo hep / tran chu ma khong ai do hoac.
+                c.send("hung01", "hung01", "Kiem tra hop thu da gui", "Dong A\nDong B");
+                GuiHelper.waitUntil(() -> {
+                    return GuiHelper.sentNames((MailClientFrame) box[0]).stream()
+                            .anyMatch(n -> n.startsWith("mail_"));
+                }, 10000);
+                java.util.List<String> sentList =
+                        GuiHelper.sentNames((MailClientFrame) box[0]);
+                String sentNewest = sentList.stream()
+                        .filter(n -> n.startsWith("mail_"))
+                        .reduce((x, y) -> y).orElse(null);
+                if (sentNewest != null) {
+                    GuiHelper.clickTab(box[0], 4);
+                    GuiHelper.openSentMail(box[0], sentNewest);
+                    Thread.sleep(600);
+                }
+                System.out.println("  (da dang nhap, mo thu " + newest[0]
+                        + " va ban gui " + sentNewest
+                        + ": kiem ca 5 tab, gom ca 6 dong header cua tab Doc thu)");
             } finally {
                 server.shutdown();
             }

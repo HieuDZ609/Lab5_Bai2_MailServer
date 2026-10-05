@@ -105,9 +105,24 @@ final class GuiHelper {
      * bat duoc.
      */
     static void openMail(javax.swing.JFrame frame, String name) throws Exception {
-        @SuppressWarnings("unchecked")
-        javax.swing.JList<String> list =
-                (javax.swing.JList<String>) field(frame, "mailboxList");
+        selectInList((javax.swing.JList<String>) field(frame, "mailboxList"), name);
+    }
+
+    /**
+     * Bam vao 1 thu trong danh sach <b>"thu da gui"</b> (tab so 4).
+     *
+     * <p>Khac {@link #openMail} o cho danh sach nam o tab rieng, nen dung
+     * {@code sentList} chu khong phai {@code mailboxList}.
+     *
+     * @param frame khung client
+     * @param name  ten file can mo
+     */
+    static void openSentMail(javax.swing.JFrame frame, String name) throws Exception {
+        selectInList((javax.swing.JList<String>) field(frame, "sentList"), name);
+    }
+
+    private static void selectInList(javax.swing.JList<String> list, String name)
+            throws Exception {
         onEdt(() -> {
             for (int i = 0; i < list.getModel().getSize(); i++) {
                 if (name.equals(list.getModel().getElementAt(i))) {
@@ -286,7 +301,8 @@ final class GuiHelper {
 
     @SuppressWarnings("unchecked")
     /**
-     * Bam nut chuyen tab theo chi so (0=Dang ky, 1=Dang nhap, 2=Hop thu, 3=Doc thu).
+     * Bam nut chuyen tab theo chi so (0=Dang ky, 1=Dang nhap, 2=Gui thu, 3=Doc thu,
+     * 4=Thu da gui) — khop voi hang so TAB_* cua {@code MailClientFrame}.
      *
      * <p>Dung {@code doClick()} — cung duong di voi nguoi dung that, dung cach goi
      * {@code selectTab()} noi bo se bo qua hien ung phu cua viec chuyen tab.
@@ -298,6 +314,18 @@ final class GuiHelper {
         });
         if (b == null) throw new IllegalStateException("Khong co nut tab " + index);
         SwingUtilities.invokeAndWait(((Theme.FlatButton) b)::doClick);
+    }
+
+    /**
+     * @param frame khung client
+     * @param index chi so tab
+     * @return {@code true} neu nut cua tab dang hien (chi hien khi da dang nhap)
+     */
+    static boolean tabVisible(javax.swing.JFrame frame, int index) throws Exception {
+        return onEdt(() -> {
+            List<Component> bs = tabButtons((MailClientFrame) frame);
+            return index >= 0 && index < bs.size() && bs.get(index).isVisible();
+        });
     }
 
     static List<Component> tabButtons(MailClientFrame f)
@@ -322,6 +350,17 @@ final class GuiHelper {
         return onEdt(() -> {
             List<String> out = new ArrayList<>();
             javax.swing.DefaultListModel<String> m = mailboxModel((MailClientFrame) frame);
+            for (int i = 0; i < m.size(); i++) out.add(m.get(i));
+            return out;
+        });
+    }
+
+    /** @return danh sach ten thu da gui theo thu tu hien thi tren man hinh */
+    static List<String> sentNames(javax.swing.JFrame frame) throws Exception {
+        return onEdt(() -> {
+            List<String> out = new ArrayList<>();
+            javax.swing.DefaultListModel<String> m =
+                    (javax.swing.DefaultListModel<String>) field(frame, "sentModel");
             for (int i = 0; i < m.size(); i++) out.add(m.get(i));
             return out;
         });

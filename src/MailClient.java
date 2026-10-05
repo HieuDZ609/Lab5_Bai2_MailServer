@@ -77,6 +77,15 @@ public class MailClient {
      */
     private volatile List<String> currentMailList = new ArrayList<>();
 
+    /**
+     * Danh sach hop thu <b>da gui</b> ({@code sent}) cua tai khoan dang dang nhap.
+     *
+     * <p>Tach rieng tu {@link #currentMailList} vi day la hai danh sach doc lap —
+     * cung ten file co the xuat hien o ca hai (gui cho chinh minh tao
+     * {@code data/minh/mail_0007.txt} va {@code data/minh/sent/mail_0003.txt}).
+     */
+    private volatile List<String> currentSentList = new ArrayList<>();
+
     public MailClient(String serverHost, int serverPort) throws IOException {
         this.serverHost = serverHost;
         this.serverPort = serverPort;
@@ -116,9 +125,13 @@ public class MailClient {
         if (Protocol.isOk(response[0])) {
             currentUser = user;
             currentMailList = new ArrayList<>(Protocol.parseFileList(response[1]));
+            // Lay them hop thu da gui ngay luc dang nhap, de tab "Thu da gui"
+            // khong bi rong trong khoang thoi gian cho vong poll dau tien chay.
+            currentSentList = new ArrayList<>(fetchSentList(user));
         } else {
             currentUser = null;
             currentMailList = new ArrayList<>();
+            currentSentList = new ArrayList<>();
         }
         return response;
     }
@@ -151,6 +164,7 @@ public class MailClient {
         String[] response = request(Protocol.OP_LOGOUT);
         currentUser = null;
         currentMailList = new ArrayList<>();
+        currentSentList = new ArrayList<>();
         return response;
     }
 
@@ -172,6 +186,44 @@ public class MailClient {
             currentMailList = new ArrayList<>(Protocol.parseFileList(response[1]));
         }
         return response;
+    }
+
+    /**
+     * Liet ke hop thu <b>da gui</b> (tuong duong {@code LIST|user|sent}).
+     *
+     * <p>Cung cap {@link #currentSentList} moi khi thanh cong — <b>dung he hon</b>
+     * {@link #list(String)}: sau khi goi xong thi {@link #getCurrentSentList()} da
+     * phan anh dung thu da gui vua co, dung de so sanh {@code before}/{@code after}
+     * trong vong poll.
+     */
+    public String[] listSent(String username) throws IOException {
+        String[] response = request(Protocol.OP_LIST
+                + Protocol.FIELD_SEPARATOR + Protocol.escape(username.trim())
+                + Protocol.FIELD_SEPARATOR + Mailbox.FOLDER_SENT,
+                POLL_TIMEOUT_MS);
+        if (Protocol.isOk(response[0])) {
+            currentSentList = new ArrayList<>(Protocol.parseFileList(response[1]));
+        }
+        return response;
+    }
+
+    /**
+     * Lay danh sach thu da gui, tra ve rong neu that bai.
+     *
+     * <p>Khong nem loi: danh sach sent khong quan trong bang danh sach hop thu den, nen
+     * mot {@code LIST} that bai (hoac may phai server tam unavailable) khong duoc
+     * lam {@link #login} that bai — nguoi dung van phai dang nhap duoc va xem thu den.
+     */
+    private List<String> fetchSentList(String username) {
+        try {
+            String[] response = listSent(username);
+            if (Protocol.isOk(response[0])) {
+                return Protocol.parseFileList(response[1]);
+            }
+        } catch (IOException ignored) {
+            // Bo qua: xem ghi chu ben tren.
+        }
+        return Collections.emptyList();
     }
 
     /**
@@ -217,6 +269,20 @@ public class MailClient {
                 + Protocol.FIELD_SEPARATOR + Protocol.escape(fileName));
     }
 
+    /**
+     * Doc thu o hop thu {@code sent} — tuong duong {@code FETCH|user|sent|filename}.
+     *
+     * @param username tai khoan so huu thu
+     * @param fileName ten file trong thu muc {@code sent/}
+     * @return {@code [status, message]}
+     */
+    public String[] fetchSent(String username, String fileName) throws IOException {
+        return request(Protocol.OP_FETCH
+                + Protocol.FIELD_SEPARATOR + Protocol.escape(username.trim())
+                + Protocol.FIELD_SEPARATOR + Mailbox.FOLDER_SENT
+                + Protocol.FIELD_SEPARATOR + Protocol.escape(fileName));
+    }
+
     // ==================== TRUY VAN TRANG THAI (cho status bar cua GUI) ====================
 
     public String getServerHost() {
@@ -244,6 +310,11 @@ public class MailClient {
     /** @return danh sach ten file nhan duoc o lan LOGIN gan nhat */
     public List<String> getCurrentMailList() {
         return currentMailList;
+    }
+
+    /** @return danh sach ten file o hop thu "da gui", rong neu chua dang nhap */
+    public List<String> getCurrentSentList() {
+        return currentSentList;
     }
 
     public boolean isLoggedIn() {

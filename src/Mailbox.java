@@ -52,6 +52,30 @@ public class Mailbox {
     /** Ten file mail chao mung, dinh nghia chinh xac theo de bai. */
     public static final String WELCOME_FILE = "new_email.txt";
 
+    /**
+     * Ten thu muc con: chua ban gui cua chinh tai khoan.
+     *
+     * <p><b>Viet sao luu o rieng thu muc con, khong danh dau ten file:</b> danh dau
+     * ten file se lam hong giao thuc — {@code LOGIN} phai tra ve
+     * {@code mail_0001.txt~mail_0002.txt}, neu chen them tien to thi client khong con
+     * cach nao phan biet thu nao la thu den. Thay vao do tach theo <b>thu muc</b>: mot
+     * lenh {@code LIST}/{@code FETCH} co them tham so {@code folder} de chon.
+     *
+     * <p>Cung vi ly do nay, {@link #FOLDER_SENT} <b>khong duoc phep la ten tai khoan</b>
+     * (xem {@link #isValidUsername}).
+     */
+    public static final String FOLDER_SENT = "sent";
+
+    /** Hop thu den (thu muc goc cua tai khoan). */
+    public static final String FOLDER_INBOX = "inbox";
+
+    /**
+     * Ten file tam khi luu ban gui — <b>co dau cham ngan</b> nen khong khop
+     * {@code mail_*.txt}, vai thay vi duoi {@code .txt} nen {@code LIST} khong bao
+     * gio thay no la thu moi.
+     */
+    private static final String SENT_TEMP_NAME = ".pending.txt";
+
     /** Tien to file email thuong. */
     private static final String MAIL_PREFIX = "mail_";
 
@@ -64,6 +88,17 @@ public class Mailbox {
      * deu khong khop nen bi tu choi truoc khi ghep vao duong dan file.
      */
     private static final Pattern VALID_USERNAME = Pattern.compile("^[a-zA-Z0-9_]{3,32}$");
+
+    /**
+     * Chi chap nhan hai hop thu nay. Moi truong ten thu muc <b>phai</b> kiem tra
+     * {@code == null} truoc khi ghep vao duong dan — neu bo qua, lenh
+     * {@code LIST|alice|../../etc} se chui ra ngoai thu muc du lieu. Day la
+     * {@code Path Traversal} do chinh ta tu tao ra.
+     */
+    public static String folderOf(String name) {
+        if (FOLDER_INBOX.equals(name) || FOLDER_SENT.equals(name)) return name;
+        return null;
+    }
 
     /** Ten domain cua he thong mail. */
     private static final String DOMAIN = "mailserver.local";
@@ -112,6 +147,10 @@ public class Mailbox {
      * @return true neu hop le
      */
     public static boolean isValidUsername(String username) {
+        // "sent" hop le ve regex nhung <b>khong duoc</b> la ten tai khoan: no la ten
+        // thu muc con dung de luu ban gui. Neu cho qua, lenh LIST se hien "sent" nhu
+        // mot tai khoan co the dang nhap, va tai khoan that cu lai khong tao duoc.
+        if (FOLDER_SENT.equals(username)) return false;
         return username != null && VALID_USERNAME.matcher(username).matches();
     }
 
@@ -130,6 +169,9 @@ public class Mailbox {
         }
         if (!VALID_USERNAME.matcher(username).matches()) {
             return "Ten tai khoan chi duoc chua ky tu a-z, A-Z, 0-9 va gach duoi (_)";
+        }
+        if (FOLDER_SENT.equals(username)) {
+            return "'" + FOLDER_SENT + "' la ten hop thu, khong phai ten tai khoan";
         }
         return null;
     }
@@ -168,6 +210,9 @@ public class Mailbox {
             // client khac vua tao) thi nem FileAlreadyExistsException. Phe dinh
             // "ton tai" trong File.exists() o tren chi de dua nhanh.
             Files.createDirectory(mailbox);
+            // Tao san thu muc con "sent" de cau truc du lieu luon ro rang
+            // ngay tu luc dang ky, khong phai doi den lan gui thu dau tien moi co.
+            Files.createDirectory(folderDirOf(username, FOLDER_SENT));
 
             // File mail chao mung - dinh nghia chinh xac theo de bai.
             String welcome = buildMailFile(SYSTEM_ADDRESS, username + DEFAULT_DOMAIN,
@@ -204,6 +249,19 @@ public class Mailbox {
      * @param username ten tai khoan
      * @return chuoi hex hash, hoac null neu tai khoan chua duoc luu mat khau
      */
+    /**
+     * Tai khoan co that su khong: co thu muc hop thu <b>va</b> co dong hash mat khau.
+     *
+     * <p>Cham hon {@link #accountExists} (cai do chi kiem tra thu muc) nen dung de
+     * quyet dinh co <i>phep tao du lieu cho</i> tai khoan do hay khong.
+     *
+     * @param username ten tai khoan can kiem tra
+     * @return {@code true} neu la tai khoan da duoc tao qua {@link #createAccount}
+     */
+    private boolean hasAccount(String username) {
+        return accountExists(username) && loadPassword(username) != null;
+    }
+
     private String loadPassword(String username) {
         Path file = accountsFile();
         if (!Files.exists(file)) {
@@ -300,6 +358,11 @@ public class Mailbox {
             Files.writeString(temp, content, StandardCharsets.UTF_8);
             Files.move(temp, target);
 
+            // Luu them MOT ban gui vao hop thu "sent" cua nguoi gui, de nguoi gui
+            // xem lai duoc thu minh vua gui. Khong doi response: client tu tim ban
+            // gui bang lenh LIST|user|sent o vong poll tiep theo.
+            saveSentCopy(from, to, subject, body, senderIp);
+
             return Protocol.ok("Delivered to '" + to + "' as file " + fileName);
         } catch (FileAlreadyExistsException e) {
             return Protocol.error(Protocol.CONFLICT,
@@ -316,6 +379,62 @@ public class Mailbox {
      * @param mailbox thu muc hop thu
      * @return ten file moi
      */
+    /**
+     * Luu ban gui cua thu vao {@code data/<nguoi gui>/sent/}.
+     *
+     * <p><b>Viet ban gui la COPY chu khong phai "chuyen thu":</b> thu that da vao hop
+     * thu nguoi nhan roi. Neu gui cho chinh minh thi se co <b>hai</b> file — mot ben
+     * hop thu den, mot ben thu da gui — dung nhu Gmail/Outlook.
+     *
+     * <p>Ban gui ghi nguyen dung header cua thu goc (ke ca {@code Sender-IP}), nhung
+     * <b>khong co {@code Receiver-IP}</b>: day la ban ghi lai phia nguoi gui, chua co
+     * ai "doc" ban nay theo nghia den thi co IP nguoi nhan.
+     *
+     * <p>Khong duoc lam hong viec giao chinh: moi loi o day deu bi bo qua va van tra
+     * ve thanh cong, vi thu da den nguoi nhan roi — mat ban gui khong nghiem trong
+     * bang mat thu.
+     *
+     * @return {@code true} neu ghi ban gui thanh cong
+     */
+    private boolean saveSentCopy(String from, String to, String subject,
+                                 String body, String senderIp) {
+        // KHONG cap nhat ma: lenh SEND khong xac thuc nguoi gui, "from" chi la
+        // chuoi client tu khai. Neu khong kiem tra tai khoan co that su khong,
+        // bat ky ai cung co the "gui" voi from la mot tai khoan nguoi khac va tu
+        // tao ra data/<from>/sent/ — thu muc do lai duoc doc nhu la tai khoan
+        // (listAccounts chi dem thu muc), nen nghia la tao tan cong vao may chu.
+        if (!hasAccount(from)) return false;
+        try {
+            Path sentDir = folderDirOf(from, FOLDER_SENT);
+            Files.createDirectories(sentDir);
+            String content = buildMailFile(from + DEFAULT_DOMAIN, to + DEFAULT_DOMAIN,
+                    subject, body, senderIp);
+            writeSentWithFinalName(sentDir, content);
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Ghi vao 1 ten file <b>khong duoc danh so truoc</b> {@code mail_NNNN.txt}, roi
+     * <b>doi ten thanh ten that</b> khi da biet so thu tu tu nhat den lon.
+     *
+     * <p>Viet thang ra {@code mail_NNNN.txt} se canh do so thu tu voi cac request
+     * {@code LIST}/{@code FETCH} dang chay song song: client co the nhan danh sach
+     * chua co file moi roi thu moi xuat hien o lan poll sau. Ghi bang ten tam
+     * {@code .pending} (khong dung dinh dang {@code mail_*.txt}) nen {@code LIST}
+     * khong bao gio thay, chi khi doi ten xong moi thay.
+     */
+    private String writeSentWithFinalName(Path sentDir, String content) throws IOException {
+        Path temp = sentDir.resolve(SENT_TEMP_NAME);
+        Files.writeString(temp, content, StandardCharsets.UTF_8);
+        String fileName = nextMailFileName(sentDir);
+        Path target = sentDir.resolve(fileName);
+        Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+        return fileName;
+    }
+
     private String nextMailFileName(Path mailbox) {
         int max = 0;
         try (var stream = Files.list(mailbox)) {
@@ -403,7 +522,10 @@ public class Mailbox {
         try (var stream = Files.list(mailbox)) {
             List<String> names = new ArrayList<>();
             for (Path p : stream.toList()) {
-                if (Files.isRegularFile(p)) {
+                // Bo file tam: ghi atomic se tao file phu tam trong chinh thu muc
+                // hop thu. Neu liet ke ca no, client co the thay ".pending.txt" nhu
+                // mot thu moi, va "khong doi gi" co the bien doi gi.
+                if (Files.isRegularFile(p) && !isTempName(p.getFileName().toString())) {
                     names.add(p.getFileName().toString());
                 }
             }
@@ -426,6 +548,32 @@ public class Mailbox {
      */
     public Path mailboxOf(String username) {
         return dataDir.resolve(username).normalize();
+    }
+
+    /**
+     * Duong dan cua 1 hop thu ({@code inbox} = thu muc goc, {@code sent} = thu muc con).
+     *
+     * <p><b>BAO MAT:</b> {@code folder} phai da qua {@link #folderOf(String)} (chi nhan
+     * {@code inbox}/{@code sent}). Neu goi ham nay voi chuoi tu do nguon thi
+     * {@code LIST|alice|../../etc} se doc duoc file ngoai thu muc du lieu. Vi vay ham nay
+     * <b>nen loi</b> khi gap folder la — neu chi im lang quay ve thu muc goc, mot loi goi
+     * sai se doc duoc hop thu den thay vi bao loi, va lenh co folder rac se "chay" ma
+     * khong bao loi gi.
+     *
+     * @param username ten tai khoan da qua {@link #isValidUsername}
+     * @param folder   {@code inbox} hoac {@code sent}, da qua {@link #folderOf}
+     * @return duong dan thu muc hop thu
+     * @throws IllegalArgumentException khi {@code folder} khong phai hop thu hop le
+     */
+    public Path folderDirOf(String username, String folder) {
+        String safe = folderOf(folder);
+        if (safe == null) {
+            throw new IllegalArgumentException("Hop thu khong hop le: " + folder);
+        }
+        Path base = mailboxOf(username);
+        // "inbox" khong phai thu muc con: no chinh la thu muc goc cua tai khoan
+        // (data/<user>). Chi resolve khi folder that su la thu muc con.
+        return FOLDER_INBOX.equals(safe) ? base : base.resolve(safe);
     }
 
     /**
@@ -471,14 +619,29 @@ public class Mailbox {
      * @return danh sach ten file sap xop theo thu tu, rong neu tai khoan khong ton tai
      */
     public List<String> listMailFiles(String username) {
-        if (!isValidUsername(username)) {
+        return listMailFiles(username, FOLDER_INBOX);
+    }
+
+    /**
+     * Liet ke ten file cua 1 hop thu ({@code inbox} hoac {@code sent}).
+     *
+     * <p>Hop thu chua ton tai (vi du {@code sent} cua tai khoan tao truoc khi co tinh
+     * nang nay) se tra ve danh sach rong thay vi loi — dung vi client poll
+     * {@code sent} ngay cang khi moi dang nhap.
+     *
+     * @param username ten tai khoan
+     * @param folder   {@code inbox} hoac {@code sent}; gia tri khac hop le -> rong
+     * @return danh sach ten file sap xop theo thu tu
+     */
+    public List<String> listMailFiles(String username, String folder) {
+        if (!isValidUsername(username) || folderOf(folder) == null) {
             return Collections.emptyList();
         }
-        Path mailbox = mailboxOf(username);
-        if (!Files.isDirectory(mailbox)) {
+        Path dir = folderDirOf(username, folder);
+        if (!Files.isDirectory(dir)) {
             return Collections.emptyList();
         }
-        return listFiles(mailbox);
+        return listFiles(dir);
     }
 
     /**
@@ -495,11 +658,6 @@ public class Mailbox {
      * {@code ..} hay {@code /}, va ten tai khoan da qua {@link #isValidUsername}
      * truoc do (nen khong the chui ra ngoai thu muc du lieu).
      *
-     * @param username ten tai khoan
-     * @param fileName ten file can doc
-     * @return noi dung file, hoac null neu khong doc duoc
-     */
-    /**
      * Doc thu va **ghi lai IP nguoi doc** vao file thu (chi lan dau tien).
      *
      * <p><b>Viet khi doc la dung:</b> IP nguoi nhan chi biet o thoi diem thu bi
@@ -515,22 +673,38 @@ public class Mailbox {
      * thu van nguyen, khong bi cat nua dong. Het duoc {@code synchronized} cung
      * {@link #deliverMail} nen hai may doc cung mot thu khong ghi de nhau.
      *
+     * <p><b>Khong ghi IP cho ban gui:</b> thu muc {@code sent} la ban ghi lai phia
+     * nguoi gui, khong co "nguoi doc theo nghia den thi co IP" — nen chi hop thu den
+     * moi duoc them dong nay.
+     *
      * @param readerIp IP may dang doc thu
      * @return noi dung thu (da bao dam co dong {@code Receiver-IP}), hoac {@code null}
      *         neu khong tim thay file
      */
     public synchronized String readMailWithReceiverIp(String username, String fileName,
                                                       String readerIp) {
-        String content = readMail(username, fileName);
+        return readMailWithReceiverIp(username, FOLDER_INBOX, fileName, readerIp);
+    }
+
+    /**
+     * @param folder {@code inbox} hoac {@code sent}
+     * @see #readMailWithReceiverIp(String, String, String)
+     */
+    public synchronized String readMailWithReceiverIp(String username, String folder,
+                                                      String fileName, String readerIp) {
+        String content = readMail(username, folder, fileName);
         if (content == null) return null;
+        // Ban gui khong co nguoi nhan -> khong them dong Receiver-IP.
+        if (FOLDER_SENT.equals(folder)) return content;
         if (readerIp == null || readerIp.isBlank()) return content;
         // File da co dong nay rong -> gi nguyen, khong ghi de.
         if (hasHeader(content, "Receiver-IP")) return content;
 
         String updated = insertHeader(content, "Receiver-IP", readerIp);
         try {
-            Path target = mailboxOf(username).resolve(fileName);
-            Path temp = mailboxOf(username).resolve(fileName + ".tmp");
+            Path dir = folderDirOf(username, folder);
+            Path target = dir.resolve(fileName);
+            Path temp = dir.resolve(fileName + ".tmp");
             Files.writeString(temp, updated, StandardCharsets.UTF_8);
             Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
@@ -539,6 +713,14 @@ public class Mailbox {
             return content;
         }
         return updated;
+    }
+
+    /**
+     * @param fileName ten file can kiem tra
+     * @return {@code true} neu la file tam cua co ghi atomic, {@code false} neu la thu that
+     */
+    private static boolean isTempName(String fileName) {
+        return fileName.equals(SENT_TEMP_NAME) || fileName.endsWith(".tmp");
     }
 
     /**
@@ -587,12 +769,50 @@ public class Mailbox {
                 + content.substring(split);
     }
 
+    /**
+     * Doc noi dung cua 1 file trong hop thu de hien thi tren client.
+     *
+     * <p><b>BAO MAT:</b> ham nay khong xac thuc mat khau. Ai co ten tai khoan cung
+     * doc duoc noi dung thu cua tai khoan do. Day la han che cua giao thuc
+     * {@code FETCH|username|filename} — server khong luu phien dang nhap nen khong
+     * co cach nao xac thuc ma khong phai gui lai mat khau theo tung request.
+     * Trong pham vi bai tap nay da chap nhan, neu can siet thi phai them phien
+     * phia server hoac gui kem mat khau trong chinh request.
+     *
+     * <p>Ten file duoc kiem tra chong {@code Path Traversal}: khong cho phep
+     * {@code ..} hay {@code /}, va ten tai khoan da qua {@link #isValidUsername}
+     * truoc do (nen khong the chui ra ngoai thu muc du lieu).
+     *
+     * @param username ten tai khoan
+     * @param fileName ten file can doc
+     * @return noi dung file, hoac null neu khong doc duoc
+     */
     public String readMail(String username, String fileName) {
-        if (!isValidUsername(username) || fileName.contains("..") || fileName.contains("/")) {
+        return readMail(username, FOLDER_INBOX, fileName);
+    }
+
+    /**
+     * Doc noi dung cua 1 file trong hop thu {@code inbox} hoac {@code sent}.
+     *
+     * <p><b>BAO MAT:</b> {@code folder} phai qua {@link #folderOf} va {@code fileName}
+     * phai qua kiem tra {@code ..} / {@code /}. Day la chong {@code Path Traversal}.
+     *
+     * @param username ten tai khoan
+     * @param folder   {@code inbox} hoac {@code sent}
+     * @param fileName ten file can doc
+     * @return noi dung file, hoac null neu khong doc duoc / tham so sai
+     */
+    public String readMail(String username, String folder, String fileName) {
+        if (!isValidUsername(username) || folderOf(folder) == null) {
+            return null;
+        }
+        if (fileName == null || fileName.contains("..") || fileName.contains("/")
+                || fileName.contains("\\")) {
             return null;
         }
         try {
-            return Files.readString(mailboxOf(username).resolve(fileName), StandardCharsets.UTF_8);
+            return Files.readString(folderDirOf(username, folder).resolve(fileName),
+                    StandardCharsets.UTF_8);
         } catch (IOException e) {
             return null;
         }

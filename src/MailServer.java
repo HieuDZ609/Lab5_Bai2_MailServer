@@ -374,20 +374,34 @@ public class MailServer {
      * @param fields truong da tach cua request
      * @return response dang chuoi de gui ve client
      */
+    /**
+     * {@code LIST|username} — liet ke hop thu den (gia cu la {@code inbox}).
+     * {@code LIST|username|sent} — liet ke hop thu da gui.
+     *
+     * <p>Tham so {@code folder} cho phep bo trong de {@code LIST} cu chinh no khong
+     * doi hinh thuc, dung nguyen giao thuc da co.
+     */
     private String handleList(List<String> fields) {
-        if (fields.size() != 2) {
+        if (fields.size() != 2 && fields.size() != 3) {
             return Protocol.error(Protocol.BAD_REQUEST,
-                    "Cu phap: LIST|username");
+                    "Cu phap: LIST|username[|folder], folder = inbox|sent");
         }
         String username = fields.get(1);
+        String folder = fields.size() == 3 ? fields.get(2) : Mailbox.FOLDER_INBOX;
         if (!Mailbox.isValidUsername(username)) {
             return Protocol.error(Protocol.BAD_REQUEST, "Ten tai khoan khong hop le");
+        }
+        // Whitelist truoc khi dung ten thu muc: bo qua, "LIST|alice|../../etc" se
+        // doc duoc file ngoai thu muc du lieu.
+        if (Mailbox.folderOf(folder) == null) {
+            return Protocol.error(Protocol.BAD_REQUEST,
+                    "Hop thu khong hop le (chi co 'inbox' hoac 'sent')");
         }
         if (!java.nio.file.Files.isDirectory(mailbox.mailboxOf(username))) {
             return Protocol.error(Protocol.NOT_FOUND,
                     "Khong tim thay tai khoan '" + username + "'");
         }
-        return Protocol.ok(Protocol.joinFileList(mailbox.listMailFiles(username)));
+        return Protocol.ok(Protocol.joinFileList(mailbox.listMailFiles(username, folder)));
     }
 
     /**
@@ -401,15 +415,28 @@ public class MailServer {
      * @param fields truong da tach cua request
      * @return response dang chuoi de gui ve client
      */
+    /**
+     * {@code FETCH|username|filename} — doc thu o hop thu den.
+     * {@code FETCH|username|sent|filename} — doc thu o hop thu da gui.
+     *
+     * <p>Phan biet bang <b>so truong</b>: 3 truong thi la hop thu den, 4 truong thi
+     * truong thu 2 la ten hop thu. Cach nay khong gay nhau biet vi ten file luon co
+     * dang {@code mail_NNNN.txt} / {@code new_email.txt} — khong the trung ten hop thu.
+     */
     private String handleFetch(List<String> fields, InetAddress clientIp) {
-        if (fields.size() != 3) {
+        if (fields.size() != 3 && fields.size() != 4) {
             return Protocol.error(Protocol.BAD_REQUEST,
-                    "Cu phap: FETCH|username|filename");
+                    "Cu phap: FETCH|username|filename hoac FETCH|username|sent|filename");
         }
         String username = fields.get(1);
-        String fileName = fields.get(2);
+        String folder = fields.size() == 4 ? fields.get(2) : Mailbox.FOLDER_INBOX;
+        String fileName = fields.size() == 4 ? fields.get(3) : fields.get(2);
         if (!Mailbox.isValidUsername(username)) {
             return Protocol.error(Protocol.BAD_REQUEST, "Ten tai khoan khong hop le");
+        }
+        if (Mailbox.folderOf(folder) == null) {
+            return Protocol.error(Protocol.BAD_REQUEST,
+                    "Hop thu khong hop le (chi co 'inbox' hoac 'sent')");
         }
         if (fileName.isBlank() || fileName.contains("..") || fileName.contains("/")) {
             return Protocol.error(Protocol.BAD_REQUEST, "Ten file khong hop le");
@@ -417,12 +444,12 @@ public class MailServer {
 
         // Ghi IP nguoi doc vao file thu (lan dau tien) va tra ve noi dung da cap
         // nhat, de client thay ngay dong Receiver-IP tren man hinh.
-        String content = mailbox.readMailWithReceiverIp(username, fileName,
+        String content = mailbox.readMailWithReceiverIp(username, folder, fileName,
                 clientIp == null ? null : clientIp.getHostAddress());
         if (content == null) {
             return Protocol.error(Protocol.NOT_FOUND,
-                    "Khong tim thay file '" + fileName + "' trong hop thu cua '"
-                            + username + "'");
+                    "Khong tim thay file '" + fileName + "' trong hop thu '" + folder
+                            + "' cua '" + username + "'");
         }
         if (content.length() > Protocol.MAX_MAIL_CONTENT_SIZE) {
             // File thu qua lon (bi ghi tay ben ngoai) se khong vua mot datagram.

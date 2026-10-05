@@ -98,18 +98,61 @@ public class InkCheck {
                 // Phai MO tab "Doc thu" thi moi kiem duoc chu trong do. Chi nap
                 // noi dung ma khong chuyen tab thi moi component cua tab do chua
                 // bao gio duoc ve, nen bao loi "chu khong hien" la vo dung.
+                // Ban gui thu cho chinh minh de danh sach "Thu da gui" khong rong
+                // — danh sach rong khong kiem duoc chu nao.
+                c.send("hung01", "hung01", "Ban gui de kiem chu", "Dong A\nDong B");
                 GuiHelper.clickTab(box[0], 3);
                 Thread.sleep(700);
-                System.out.println("  (da dang nhap + mo tab Doc thu: kiem ca 4 tab,"
+                System.out.println("  (da dang nhap + mo tab Doc thu: kiem ca 5 tab,"
                         + " gom 6 dong header va vung noi dung thu)");
             } finally {
                 server.shutdown();
             }
         }
 
+        // Chi component DANG HIEN moi co y nghia. Card cua 5 tab dung CardLayout
+        // nen chi mot tab hien tai duoc ve — phai kiem tung tab rieng, neu khong
+        // tab chua bao gio mo se khong bao gio duoc kiem.
+        int checked = 0;
+        if (box[0] instanceof MailClientFrame) {
+            // Client co 5 tab. Chua dang nhap thi an 3 tab cuoi (Gui/Doc/Da gui).
+            List<Integer> tabs = login ? List.of(1, 2, 3, 4) : List.of(0, 1, 2, 3);
+            for (int tab : tabs) {
+                if (tab > 0) {
+                    if (!GuiHelper.tabVisible(box[0], tab)) continue;
+                    GuiHelper.clickTab(box[0], tab);
+                    Thread.sleep(500);
+                }
+                System.out.println("--- tab " + tab + ": " + TAB_NAMES[tab] + " ---");
+                checked += checkTab(box[0], TAB_NAMES[tab]);
+            }
+        } else {
+            // Khung may chu khong co tab: chi mot ve la du.
+            System.out.println("--- khung may chu (khong co tab) ---");
+            checked += checkTab(box[0], "May chu");
+        }
+
+        System.out.println("Da kiem tra " + checked + " component.");
+        System.out.println(problems == 0
+                ? "=> MOI CHU DEU THUC SU HIEN TREN MAN HINH"
+                : "=> " + problems + " COMPONENT BI LO CHU");
+    }
+
+    /** Ten hien thi cua tung tab, dung de in ra khi bao loi. */
+    private static final String[] TAB_NAMES = {
+            "Dang ky", "Dang nhap", "Gui thu", "Doc thu", "Thu da gui"};
+
+    /**
+     * Kiem tra moi chu dang hien tren man hinh.
+     *
+     * @param frame khung client
+     * @param tabName ten tab, chi de in ra thong bao
+     * @return so component da kiem
+     */
+    static int checkTab(javax.swing.JFrame frame, String tabName) throws Exception {
         final List<Component> all = new ArrayList<>();
         SwingUtilities.invokeAndWait(() ->
-                GuiHelper.collect(box[0].getContentPane(), all));
+                GuiHelper.collect(frame.getContentPane(), all));
 
         int checked = 0;
         for (Component c : all) {
@@ -132,11 +175,7 @@ public class InkCheck {
             System.out.printf("  %-44s %4dx%-4d %s%s%n", what, c.getWidth(),
                     c.getHeight(), verdict, c.isShowing() ? "" : "  [an]");
         }
-
-        System.out.println("Da kiem tra " + checked + " component.");
-        System.out.println(problems == 0
-                ? "=> MOI CHU DEU THUC SU HIEN TREN MAN HINH"
-                : "=> " + problems + " COMPONENT BI LO CHU");
+        return checked;
     }
 
     /** Dien san cac truong o client; server frame khong co truong nen bo qua. */

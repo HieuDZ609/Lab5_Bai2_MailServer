@@ -1,5 +1,6 @@
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.awt.Component;
 import java.util.List;
 import javax.swing.JList;
 import javax.swing.SwingUtilities;
@@ -26,10 +27,12 @@ public class E2E {
         MailServer server = GuiHelper.startServer(PORT, DATA.toString());
         try {
             protocolChecks();
+            sentMailboxChecks();
             securityChecks();
             logoutChecks();
             guiChecks(server);
             selfSendChecks(server);
+            sentGuiChecks();
             sanityChecks();
         } finally {
             server.shutdown();
@@ -126,6 +129,148 @@ public class E2E {
                 b.fetch("nguoinhan", "mail_0001.txt")[1].contains("Cam on ban"));
     }
 
+    // ==================== F2. HOP THU "DA GUI" ====================
+
+    /**
+     * Kiem tra hop thu "da gui" phia nguoi gui.
+     *
+     * <p>Yeu cau cua nguoi dung: truoc day nguoi gui gui thu xong thi khong xem
+     * duoc thu do o dau ca, vi thu chi duoc ghi vao thu muc nguoi nhan. Nay
+     * kiem tra lai ca duong: server luu ban gui, protocol doc duoc, va ban gui
+     * <b>khong</b> bi ghi them IP nguoi nhan (vi khong ai "doc" ban ghi lai).
+     */
+    static void sentMailboxChecks() throws Exception {
+        section("L. Hop thu 'da gui' phia nguoi gui");
+
+        MailClient minh = new MailClient("localhost", PORT);
+        MailClient nhu = new MailClient("localhost", PORT);
+        check("REGISTER minh -> 200", "200", minh.register("minh", "matkhau123")[0]);
+        check("REGISTER nhu -> 200", "200", nhu.register("nhu", "matkhau123")[0]);
+
+        // Thoi diem nao cung duoc: hop thu "da gui" cua tai khoan moi tao van rong.
+        check("Hop thu 'da gui' tao san khi dang ky", true,
+                Files.isDirectory(DATA.resolve("minh/sent")));
+        check("Hop thu 'da gui' moi tao rong", true,
+                minh.request("LIST|minh|sent", 1000)[1].isEmpty());
+
+        check("LOGIN minh -> 200", "200", minh.login("minh", "matkhau123")[0]);
+        // Client tu lay danh sach "da gui" ngay khi dang nhap, khong can bam them.
+        check("Dang nhap xong da co san danh sach 'da gui'", true,
+                minh.getCurrentSentList() != null);
+        check("Dang nhap: hop thu den va 'da gui' tach biet", false,
+                minh.getCurrentMailList().contains("sent"));
+
+        check("SEND minh -> nhu -> 200", "200",
+                minh.send("minh", "nhu", "Bai tap 5", "Viet bao cao")[0]);
+
+        // Ben nhan van chi nhan duoc ten file inbox, khong doi response.
+        // [0] la ma, [1] moi la thong diep co ten file.
+        check("SEND tra ve ten file inbox cua nguoi nhan", true,
+                minh.send("minh", "nhu", "Thu 2", "Noi dung 2")[1]
+                        .contains("Delivered to 'nhu'"));
+
+        // Ban gui phai nam trong data/<nguoi gui>/sent/, khong phai thu muc goc.
+        check("Ban gui luu trong sent/ cua nguoi gui", true,
+                Files.exists(DATA.resolve("minh/sent/mail_0001.txt")));
+        check("Ban gui khong lam nhieu thu muc goc", false,
+                Files.exists(DATA.resolve("minh/mail_0001.txt")));
+
+        check("LIST|minh|sent -> 200", "200", minh.listSent("minh")[0]);
+        check("LIST|sent thay 2 ban gui", true,
+                minh.getCurrentSentList().contains("mail_0001.txt")
+                        && minh.getCurrentSentList().contains("mail_0002.txt"));
+        check("LIST|sent khong lo file tam", false,
+                minh.getCurrentSentList().contains(".pending.txt"));
+        check("LIST|sent khong tron thu muc con", false,
+                minh.getCurrentSentList().contains("sent"));
+
+        // Doc ban gui: dung lenh FETCH co folder.
+        String[] sf = minh.fetchSent("minh", "mail_0001.txt");
+        check("FETCH|minh|sent|mail_0001.txt -> 200", "200", sf[0]);
+        check("Ban gui giu dung tieu de", true, sf[1].contains("Subject: Bai tap 5"));
+        check("Ban gui giu dung nguoi nhan", true,
+                sf[1].contains("To: nhu@mailserver.local"));
+        check("Ban gui co Sender-IP", true, sf[1].contains("Sender-IP: "));
+        // Ban ghi lai phia nguoi gui: chua co ai doc no theo nghia "den" thi
+        // khong duoc gan IP nguoi nhan. Neu gan, client se hieu nham rang
+        // "minh" da doc thu cua chinh minh.
+        check("Ban gui KHONG co Receiver-IP", false, sf[1].contains("Receiver-IP:"));
+        check("Doc ban gui khong them Receiver-IP vao file", false,
+                Files.readString(DATA.resolve("minh/sent/mail_0001.txt"))
+                        .contains("Receiver-IP:"));
+
+        // Hop thu den cua nguoi nhan van dung nhu cu.
+        check("Nguoi nhan doc duoc thu nhan duoc", "200",
+                nhu.fetch("nhu", "mail_0001.txt")[0]);
+
+        // Tu gui: phai co HAI ban, mot ben moi hop thu. So thu moi do server
+        // quyet dinh nen so sanh chenh lech danh sach, khong doan ten file.
+        minh.list("minh");
+        minh.listSent("minh");
+        java.util.List<String> inboxBefore = new java.util.ArrayList<>(minh.getCurrentMailList());
+        java.util.List<String> sentBefore = new java.util.ArrayList<>(minh.getCurrentSentList());
+
+        check("SEND cho chinh minh -> 200", "200",
+                minh.send("minh", "minh", "Tu gui", "Dong 1\nDong 2")[0]);
+        minh.list("minh");
+        minh.listSent("minh");
+
+        java.util.List<String> inboxNew = diff(minh.getCurrentMailList(), inboxBefore);
+        java.util.List<String> sentNew = diff(minh.getCurrentSentList(), sentBefore);
+        check("Tu gui: hop thu den co dung 1 ban moi", 1, inboxNew.size());
+        check("Tu gui: hop thu 'da gui' co dung 1 ban moi", 1, sentNew.size());
+        check("Tu gui: ban moi ben hop thu den ton tai that", true,
+                Files.exists(DATA.resolve("minh").resolve(inboxNew.get(0))));
+        check("Tu gui: ban moi ben 'da gui' ton tai that", true,
+                Files.exists(DATA.resolve("minh/sent").resolve(sentNew.get(0))));
+        // Hai ban cung noi dung nhung o hai file khac nhau, dung nhu Gmail.
+        check("Tu gui: hai ban la hai file khac nhau", false,
+                DATA.resolve("minh").resolve(inboxNew.get(0))
+                        .equals(DATA.resolve("minh/sent").resolve(sentNew.get(0))));
+
+        // Hop thu "da gui" ton tai truoc tinh nang nay: LIST rong, khong loi.
+        // Tai khoan tao tu truoc khi co tinh nang nay: khong co thu muc sent/.
+        // LIST|sent phai tra ve danh sach rong chu khong loi.
+        Files.createDirectories(DATA.resolve("cuo"));
+        MailClient old = new MailClient("localhost", PORT);
+        check("Tai khoan tao truoc (chua co sent/) khong loi", "200",
+                old.request("LIST|cuo|sent", 1000)[0]);
+        check("Tai khoan tao truoc: danh sach 'da gui' rong", true,
+                old.getCurrentSentList().isEmpty());
+
+        // Hop thu khong hop le: phai bi chan, khong duoc doc file ngoai data/.
+        check("LIST|folder sai -> 400", "400",
+                minh.request("LIST|minh|bogus", 1000)[0]);
+        check("LIST|folder la duong dan -> 400", "400",
+                minh.request("LIST|minh|..%2f..", 1000)[0]);
+        check("FETCH|folder sai -> 400", "400",
+                minh.request("FETCH|minh|bogus|mail_0001.txt", 1000)[0]);
+        check("LIST|folder hop le 'inbox' van dung", "200",
+                minh.request("LIST|minh|inbox", 1000)[0]);
+
+        // "sent" la ten hop thu nen khong duoc lam ten tai khoan.
+        check("REGISTER ten 'sent' bi tu choi", "400",
+                minh.register("sent", "matkhau123")[0]);
+
+        // SEND khong xac thuc nguoi gui nen "from" co the gia mao. Khong duoc
+        // de thu muc do bien thanh tai khoan that.
+        MailClient spoof = new MailClient("localhost", PORT);
+        nhu.list("nhu");
+        int nhuBefore = nhu.getCurrentMailList().size();
+        check("SEND voi from gia mao van giao cho nguoi nhan -> 200", "200",
+                spoof.send("khongco", "nhu", "Gia mao", "Body")[0]);
+        check("Gia mao: khong tao thu muc tai khoan gia", false,
+                Files.exists(DATA.resolve("khongco")));
+        nhu.list("nhu");
+        check("Gia mao: thu van den duoc nguoi nhan", nhuBefore + 1,
+                nhu.getCurrentMailList().size());
+
+        // LOGOUT phai xoa ca hai danh sach.
+        minh.logout();
+        check("LOGOUT xoa danh sach 'da gui'", true,
+                minh.getCurrentSentList().isEmpty());
+    }
+
     // ==================== F. BAO MAT ====================
 
     static void securityChecks() throws Exception {
@@ -191,7 +336,7 @@ public class E2E {
                         && visible(f, "mailboxCard")
                         && GuiHelper.currentTab(f) == 2
                         && !GuiHelper.text(f, "fromField").isEmpty(), 5000));
-        check("Dang nhap xong: hien 4 tab", 4, visibleTabs(f));
+        check("Dang nhap xong: hien 5 tab", 5, visibleTabs(f));
         check("Dang nhap xong: hien card hop thu", true, visible(f, "mailboxCard"));
         check("Dang nhap xong: hien nut Dang xuat", true, visible(f, "logoutButton"));
         check("Dang nhap xong: chuyen sang tab Gui thu", 2, GuiHelper.currentTab(f));
@@ -433,12 +578,114 @@ public class E2E {
 
     // ==================== I. SERVER ====================
 
+    // ==================== M. TAB "THU DA GUI" TRONG GUI ====================
+
+    /**
+     * Kiem tra tab "Thu da gui" cua GUI: hien danh sach ban gui, bam duoc vao
+     * thu, sang tab "Doc thu", va hien dung hop thu.
+     */
+    static void sentGuiChecks() throws Exception {
+        section("M. Tab 'Thu da gui' trong GUI");
+
+        // GuiHelper.login chi dang nhap, khong tao tai khoan — phai tao truoc.
+        MailClient owner = new MailClient("localhost", PORT);
+        check("REGISTER nguoigui -> 200", "200", owner.register("nguoigui", "matkhau789")[0]);
+        MailClient friend = new MailClient("localhost", PORT);
+        check("REGISTER banthan -> 200", "200", friend.register("banthan", "matkhau789")[0]);
+
+        MailClientFrame f = new MailClientFrame();
+        SwingUtilities.invokeAndWait(() -> f.setVisible(true));
+        GuiHelper.login(f, "nguoigui", "matkhau789", PORT);
+
+        check("Sau dang nhap: co nut tab 'Thu da gui'", true,
+                GuiHelper.waitUntil(() -> {
+                    try {
+                        List<Component> bs = GuiHelper.tabButtons(f);
+                        // Theme.FlatButton tu ve chu (khong phai JButton nen khong
+                        // goi duoc getText()) -> phai dung helper doc qua reflection.
+                        return bs.size() > 4 && bs.get(4).isVisible()
+                                && String.valueOf(GuiHelper.buttonText(
+                                        (Theme.FlatButton) bs.get(4)))
+                                        .contains("Thư đã gửi");
+                    } catch (Exception e) {
+                        return false;
+                    }
+                }, 5000));
+        check("Sau dang nhap: hop thu den rong (khong thua muc con)", false,
+                GuiHelper.mailboxNames(f).contains("sent"));
+        check("Sau dang nhap: danh sach 'da gui' rong", true,
+                GuiHelper.sentNames(f).isEmpty());
+
+        // Gui mot thu cho nguoi khac: ban gui phai xuat hien o tab rieng.
+        List<String> inboxBeforeSend = GuiHelper.mailboxNames(f);
+        SwingUtilities.invokeAndWait(() -> {
+            GuiHelper.setText(f, "toField", "banthan");
+            GuiHelper.setText(f, "subjectField", "Bai tap 5");
+            GuiHelper.setArea(f, "bodyArea", "Xin chao ban");
+        });
+        GuiHelper.clickText(f, "Gửi thư đi");
+        check("Gui cho nguoi khac: co phan hoi 200", true,
+                GuiHelper.waitUntil(() ->
+                        GuiHelper.text(f, "sendResult").startsWith("200"), 5000));
+        check("Ban gui xuat hien o tab 'Thu da gui'", true,
+                GuiHelper.waitUntil(() -> GuiHelper.sentNames(f).size() == 1, 6000));
+        // Hop thu den phai Y NGUYEN: ban gui khong duoc do vao hop thu den.
+        check("Ban gui KHONG xuat hien o hop thu den", inboxBeforeSend,
+                GuiHelper.mailboxNames(f));
+
+        // Bam vao ban gui -> sang tab "Doc thu" va nhan hop thu phai la "da gui".
+        GuiHelper.clickTab(f, 4);
+        check("Bam nut tab 4: sang tab Thu da gui", 4, GuiHelper.currentTab(f));
+        String sentFile = GuiHelper.sentNames(f).get(0);
+        GuiHelper.openSentMail(f, sentFile);
+        check("Bam ban gui: sang tab Doc thu", true,
+                GuiHelper.waitUntil(() -> GuiHelper.currentTab(f) == 3, 5000));
+        check("Bam ban gui: hien dung tieu de", "Bai tap 5",
+                GuiHelper.text(f, "readSubject"));
+        check("Bam ban gui: hien dung nguoi nhan", true,
+                GuiHelper.text(f, "readTo").contains("banthan"));
+        check("Bam ban gui: nhan hop thu la 'thu da gui'", "thư đã gửi",
+                GuiHelper.text(f, "readFolderLabel"));
+        check("Bam ban gui: co Sender-IP", true,
+                GuiHelper.text(f, "readSenderIp").startsWith("127."));
+
+        // Quay lai hop thu den: nhan hop thu doi sang "hop thu den".
+        GuiHelper.clickTab(f, 4);
+        GuiHelper.openSentMail(f, sentFile);
+        selectMail(f, "new_email.txt");
+        check("Mo thu o hop thu den: nhan hop thu doi lai", true,
+                GuiHelper.waitUntil(() -> "hộp thư đến".equals(
+                        GuiHelper.text(f, "readFolderLabel")), 5000));
+
+        // Xoa phien: danh sach "da gui" phai bi xoa theo.
+        SwingUtilities.invokeAndWait(GuiHelper.button(f, "logoutButton")::doClick);
+        check("Dang xuat: danh sach 'da gui' duoc xoa", true,
+                GuiHelper.waitUntil(() -> !loggedIn(f)
+                        && GuiHelper.sentNames(f).isEmpty(), 5000));
+    }
+
     static void sanityChecks() throws Exception {
         section("I. Server van con chay");
         check("Server con phan hoi sau lenh loi", "200", a.list("hung01")[0]);
     }
 
     // ==================== TIEN ICH ====================
+
+    /**
+     * Tra ve cac phan tu co trong {@code after} nhung khong co trong {@code before}.
+     *
+     * <p>Dung de biet "file moi" ma khong phai doan ten file theo so thu tu.
+     *
+     * @param after  danh sach moi nhat tu server
+     * @param before danh sach truoc do
+     * @return cac phan tu chi xuat hien trong {@code after}
+     */
+    static java.util.List<String> diff(java.util.List<String> after,
+                                       java.util.List<String> before) {
+        java.util.List<String> fresh = new java.util.ArrayList<>(after);
+        fresh.removeAll(before);
+        return fresh;
+    }
 
     static void section(String name) {
         System.out.println("\n" + name);
