@@ -8,6 +8,7 @@ import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.GraphicsEnvironment;
+import java.awt.Image;
 import java.awt.Insets;
 import java.awt.RenderingHints;
 import java.awt.event.ActionEvent;
@@ -20,6 +21,7 @@ import java.util.Set;
 import javax.swing.BorderFactory;
 import javax.swing.AbstractAction;
 import javax.swing.ActionMap;
+import javax.swing.ImageIcon;
 import javax.swing.InputMap;
 import javax.swing.JComponent;
 import javax.swing.KeyStroke;
@@ -200,6 +202,13 @@ public final class Theme {
     public static final int S4 = 16;
     public static final int S5 = 24;
     public static final int S6 = 32;
+
+    /** Chieu cao logo truong VKU trong header cua ca hai cua so. */
+    public static final int LOGO_H = 72;
+
+    /** Ten truong, hien thi ngay duoi ten ung dung trong header. */
+    public static final String SCHOOL =
+            "Trường Đại học Công nghệ Thông tin và Truyền thông Việt – Hàn, Đại học Đà Nẵng";
 
     // ==================== THIET LAP CHUNG ====================
 
@@ -391,6 +400,22 @@ public final class Theme {
         JLabel l = new JLabel(text);
         l.setFont(LABEL_STRONG);
         l.setForeground(INK_2);
+        return l;
+    }
+
+    /**
+     * Nhan chua logo truong, can theo chieu cao {@link #LOGO_H}.
+     *
+     * <p>Tra {@code null} khi khong nap duoc anh, de header bo trong chay tiep
+     * thay vi lam hong ca cua so. Chu canh bao lay tu {@link LogoAssets#warning()}.
+     */
+    public static JLabel logoLabel() {
+        Image img = LogoAssets.scaledToHeight(LOGO_H);
+        if (img == null) {
+            return null;
+        }
+        JLabel l = new JLabel(new ImageIcon(img));
+        l.setPreferredSize(new Dimension(img.getWidth(null), LOGO_H));
         return l;
     }
 

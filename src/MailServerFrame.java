@@ -4,6 +4,7 @@ import java.awt.FlowLayout;
 import java.awt.GraphicsEnvironment;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
+import java.awt.Image;
 import java.awt.Insets;
 import java.util.Deque;
 import java.util.concurrent.ConcurrentLinkedDeque;
@@ -70,6 +71,10 @@ public class MailServerFrame extends JFrame {
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         setSize(880, 640);
         setMinimumSize(new Dimension(720, 520));
+        Image icon = LogoAssets.windowIcon(128);
+        if (icon != null) {
+            setIconImage(icon);
+        }
         setLocationRelativeTo(null);
 
         portField.setText(String.valueOf(MailServer.DEFAULT_PORT));
@@ -124,6 +129,15 @@ public class MailServerFrame extends JFrame {
         JPanel header = new JPanel(new BorderLayout());
         header.setOpaque(false);
 
+        JPanel left = new JPanel(new BorderLayout());
+        left.setOpaque(false);
+        left.setBorder(BorderFactory.createEmptyBorder(0, Theme.S1, 0, Theme.S3));
+
+        JLabel logo = Theme.logoLabel();
+        if (logo != null) {
+            left.add(logo, BorderLayout.WEST);
+        }
+
         JPanel titles = new JPanel();
         titles.setOpaque(false);
         titles.setLayout(new BoxLayout(titles, BoxLayout.Y_AXIS));
@@ -132,15 +146,29 @@ public class MailServerFrame extends JFrame {
         name.setFont(Theme.DISPLAY);
         name.setForeground(Theme.INK);
 
-        JLabel sub = new JLabel("Lab 5 — Bài 2 · dịch vụ thư điện trên giao thức UDP");
+        JLabel school = new JLabel(Theme.SCHOOL);
+        school.setFont(Theme.LABEL);
+        school.setForeground(Theme.INK_3);
+
+        String subText = "Lab 5 — Bài 2 · dịch vụ thư điện trên giao thức UDP";
+        String warn = LogoAssets.warning();
+        if (warn != null) {
+            subText = subText + " · " + warn;
+        }
+
+        JLabel sub = new JLabel(subText);
         sub.setFont(Theme.LABEL);
         sub.setForeground(Theme.INK_3);
 
         titles.add(name);
         titles.add(Box.createVerticalStrut(Theme.S1));
+        titles.add(school);
+        titles.add(Box.createVerticalStrut(Theme.S1));
         titles.add(sub);
 
-        header.add(titles, BorderLayout.WEST);
+        left.add(titles, BorderLayout.CENTER);
+
+        header.add(left, BorderLayout.WEST);
         header.add(statusSlot, BorderLayout.EAST);
         header.setBorder(BorderFactory.createEmptyBorder(0, Theme.S1, Theme.S4, Theme.S1));
         return header;

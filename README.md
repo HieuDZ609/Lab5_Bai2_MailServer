@@ -3,6 +3,10 @@
 Bài tập lập trình UDP socket: xây dựng **Mail Server** và **Mail Client** bằng Java
 hỗ trợ 3 chức năng — tạo tài khoản, gửi email, đăng nhập và xem danh sách email.
 
+| | |
+|---|---|
+| ![Logo VKU](assets/vku-logo.png) | Logo trường nằm ở `assets/vku-logo.png`, hiển thị trong header của cả hai cửa sổ và làm icon cửa sổ. Xem [§3.1](#31-anh-logo-trong-classpath). |
+
 > Chi tiết lý thuyết nền tảng (mô hình mạng, tầng transport, hệ thống email, RFC 5322/1939/4954…)
 > nằm trong **[`LY_THUYET.md`](LY_THUYET.md)**.
 
@@ -58,9 +62,32 @@ javac -encoding UTF-8 -d build src/*.java
 
 # Nếu không có javac trong PATH, dùng đường dẫn đầy đủ:
 /mnt/Nigga/Code/jdk17/bin/javac -encoding UTF-8 -d build src/*.java
+
+# Bắt buộc: copy ảnh logo vào classpath (xem §3.1)
+mkdir -p build/assets && cp assets/*.png build/assets/
 ```
 
 `-encoding UTF-8` là **bắt buộc**, vì code chứa chuỗi tiếng Việt không dấu và có comment tiếng Việt.
+
+### 3.1 Ảnh logo trong classpath
+
+`javac` chỉ biên dịch `.java` sang `.class`, **không** copy tài nguyên. Nên dù lệnh
+biên dịch chạy đúng, ảnh trong `assets/` vẫn không nằm trong `build/` và không tìm thấy
+qua classpath. Vì vậy phải có bước `cp` ở trên.
+
+`LogoAssets` nạp ảnh theo thứ tự:
+
+1. `getResourceAsStream("/assets/vku-logo.png")` — classpath (bước `cp` ở trên lo phần này);
+2. thư mục chứa class đang chạy, thư mục cha của nó, và thư mục làm việc — dự phòng khi
+   chạy tay không có bước `cp`.
+
+Nếu mọi cách đều thất bại, `LogoAssets.master()` trả `null`, header **không** gắn logo và
+dòng phụ hiện cảnh báo `⚠ thiếu assets/vku-logo.png`. Chương trình vẫn chạy bình thường —
+thiếu ảnh không được làm hỏng giao diện, nhưng phải **nhìn thấy được** để không tưởng là
+đã có logo.
+
+Kích thước hiển thị đặt ở `Theme.LOGO_H` (72px). Ảnh gốc 960×491 được thu về 282×144 để
+lấy mật độ 2× so với kích thước hiển thị.
 
 ---
 
@@ -79,7 +106,7 @@ Cửa sổ server gồm:
 
 | Vùng | Nội dung |
 |---|---|
-| Thanh tiêu đề | Tên chương trình + đèn trạng thái (đang chạy / đã dừng) |
+| Thanh tiêu đề | Logo trường VKU + `Mail Server UDP` + tên trường, bên phải là đèn trạng thái (đang chạy / đã dừng) |
 | Thẻ **Cấu hình** | Ô `Cổng UDP` (mặc định `2346`), ô `Thư mục dữ liệu` (mặc định `data/` trong thư mục dự án), nút `Chọn…` |
 | Nút | `Bắt đầu` — mở socket và bắt đầu lắng nghe · `Dừng` — đóng socket |
 | Thẻ **Nhật ký hoạt động** | Mỗi request/response, giữ 500 dòng gần nhất |
@@ -101,7 +128,7 @@ Cửa sổ client gồm:
 | Cột trái — **Kết nối máy chủ** | Ô `Máy chủ` (mặc định `localhost`), ô `Cổng UDP` (mặc định `2346`)<br>Hàng 1: `Kết nối` · `Ngắt` — Hàng 2: `Đăng xuất` (**chỉ hiện sau khi đăng nhập**) |
 | Cột trái — **Hộp thư** | **Thư đến** của tài khoản đang đăng nhập (**ẩn cho tới khi đăng nhập**). Thư mới có dấu `●` màu nhấn mạnh |
 | Cột phải — 5 tab | `Đăng ký` · `Đăng nhập` · `Gửi thư` · `Đọc thư` · `Thư đã gửi` |
-| Thanh tiêu đề | Đèn trạng thái + tài khoản/địa chỉ đang dùng |
+| Thanh tiêu đề | Logo trường VKU + `Mail Client UDP` + tên trường; bên phải là đèn trạng thái + tài khoản/địa chỉ đang dùng |
 
 **Giao diện chỉ mở những gì dùng được.** Trước khi đăng nhập chỉ có 2 tab `Đăng ký` / `Đăng nhập`;
 thẻ `Hộp thư`, tab `Gửi thư`, tab `Đọc thư`, tab `Thư đã gửi` và nút `Đăng xuất` đều **ẩn**.
@@ -482,6 +509,12 @@ Ba điểm dễ sai đã được xử lý trong bộ test và nên biết khi �
 3. `CardLayout.show(container, name)` lưu key ở *constraints*, không phải `setName()` — đọc
    tab hiện tại bằng cách dò `isVisible()` của các card sẽ ra `-1`. Vì vậy
    `MailClientFrame` có sẵn field `currentTab` được `selectTab()` cập nhật.
+4. **Thiếu ảnh logo không được làm `InkCheck` báo xanh.** `describe()` gọi mặc định trả
+   `null` cho `JLabel` không có chữ, nên nếu không sửa, logo sẽ không bao giờ được đếm
+   pixel — mất file `assets/` cũng ra kết quả "mọi chữ đều hiện". Vì vậy `describe()` có
+   nhánh riêng cho nhãn có icon, và `checkLogo()` kiểm tra tường minh: ảnh phải nạp được,
+   nhãn phải tồn tại, chiều cao phải đúng `Theme.LOGO_H`, và phải vẽ ra tối thiểu 12 pixel
+   màu. Chạy `InkCheck` trong thư mục không có `assets/` sẽ báo lỗi và trả exit code 1.
 
 Ngoài ra, một `JFrame` đang hiển thị giữ AWT event thread nên **JVM sẽ không tự dừng** nếu
 công cụ ném exception. `InkCheck`/`GeoCheck` gọi `System.exit` trong `finally` để không bị treo
@@ -498,6 +531,9 @@ Hai công cụ bổ sung, cùng nguyên tắc: **kích thước component không
 | `InkCheck` | Vẽ riêng từng component vào ảnh, đếm pixel khác nền ở **phần nội** (bỏ 3px sát viền). 0 pixel ⇒ chữ không hiện |
 | `GeoCheck` | So `preferredSize` với kích thước thật để phát hiện chữ bị cắt, và quét cặp component xem có chồng lấn không |
 
+`InkCheck` còn kiểm riêng **logo trường**: phải nạp được ảnh, nhãn phải tồn tại đúng chiều cao
+`Theme.LOGO_H`, và phải vẽ ra pixel thật (xem điểm 4 ở trên).
+
 Cả hai chạy được ở chế độ **trước** và **sau** đăng nhập (thêm đối số `login`) — sau đăng nhập
 mới kiểm được các tab vốn bị ẩn.
 
@@ -506,9 +542,12 @@ mới kiểm được các tab vốn bị ẩn.
 > pixel. Nếu chỉ quét một lần ở tab mặc định thì các tab khác không component nào
 > đang hiện ⇒ không được kiểm gì, và một tab hỏng vẫn ra kết quả "xanh".
 
-Kết quả: `InkCheck` xanh ở 14/14 component của server, 94 component của client trước đăng
-nhập và 244 component sau đăng nhập (đã gồm cả tab `Thư đã gửi`); `GeoCheck` xanh ở
-`1000x640`, `1100x700`, `1180x740`, `1280x820`, cả trước và sau đăng nhập.
+Kết quả: `InkCheck` xanh ở 16/16 component của server, 98 component của client trước đăng
+nhập và 252 component sau đăng nhập (đã gồm cả tab `Thư đã gửi` và logo trường trong header);
+`GeoCheck` xanh ở `1000x640`, `1100x700`, `1180x740`, `1280x820`, cả trước và sau đăng nhập.
+
+Header có logo nên cao thêm, vì vậy cũng đã kiểm thủ công hai kích thước nhỏ nhất mà
+`run.sh` không chạy: server `720x520` và client `940x640` — đều `HINH HOC SAN`.
 
 > `GeoCheck` **không** bắt được lỗi `FlowLayout` làm component xuống dòng — vì chúng không
 > chồng lấn, chỉ nằm khác hàng. Loại lỗi đó phải nhìn tọa độ `y` của từng nút; đó là lý do
@@ -553,9 +592,11 @@ print(rq("LOGOUT\r\n"))                         # 200
 | `src/Mailbox.java` | Nghiệp vụ lưu trữ: tạo account, hash SHA-256, ghi/đọc file email, hai hộp thư `inbox`/`sent` |
 | `src/MailServer.java` | UDP socket, listener thread, worker pool, điều phối request → `Mailbox`, đẩy log qua `Consumer<String>` |
 | `src/MailClient.java` | Socket UDP phía client, gửi request, nhận & phân tích response |
-| `src/Theme.java` | Design token: màu, font, khoảng cách, bo góc; nút phẳng tự vẽ |
+| `src/Theme.java` | Design token: màu, font, khoảng cách, bo góc; nút phẳng tự vẽ; `LOGO_H` và `logoLabel()` |
 | `src/MailServerFrame.java` | Cửa sổ server: cấu hình, Start/Stop, nhật ký real-time |
 | `src/MailClientFrame.java` | Cửa sổ client: kết nối, hộp thư đến, 5 tab REGISTER / LOGIN / SEND / READ / SENT, vòng poll, đăng xuất |
+| `src/LogoAssets.java` | Nạp `assets/vku-logo.png` (classpath → dự phòng đường dẫn file), tạo icon cửa sổ, cảnh báo khi thiếu ảnh |
+| `assets/vku-logo.png` | Logo trường VKU, nền trong suốt, 282×144 (2× kích thước hiển thị) |
 
 ### Vài điểm kỹ thuật đáng chú ý
 

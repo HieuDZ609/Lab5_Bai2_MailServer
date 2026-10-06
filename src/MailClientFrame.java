@@ -4,6 +4,7 @@ import java.awt.Dimension;
 import java.awt.GraphicsEnvironment;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
+import java.awt.Image;
 import java.awt.Insets;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
@@ -218,6 +219,10 @@ public class MailClientFrame extends JFrame {
         setTitle("Mail Client UDP — Lab 5 Bài 2");
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
         setMinimumSize(new Dimension(940, 640));
+        Image icon = LogoAssets.windowIcon(128);
+        if (icon != null) {
+            setIconImage(icon);
+        }
         setContentPane(buildLayout());
 
         connectButton.onClick(this::connect);
@@ -257,6 +262,15 @@ public class MailClientFrame extends JFrame {
         head.setOpaque(false);
         head.setBorder(BorderFactory.createEmptyBorder(0, 0, Theme.S3, 0));
 
+        JPanel left = new JPanel(new BorderLayout());
+        left.setOpaque(false);
+        left.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, Theme.S3));
+
+        JLabel logo = Theme.logoLabel();
+        if (logo != null) {
+            left.add(logo, BorderLayout.WEST);
+        }
+
         JPanel names = new JPanel();
         names.setOpaque(false);
         names.setLayout(new BoxLayout(names, javax.swing.BoxLayout.Y_AXIS));
@@ -266,9 +280,23 @@ public class MailClientFrame extends JFrame {
         names.add(name);
         names.add(javax.swing.Box.createVerticalStrut(2));
 
-        JLabel sub = Theme.label("REGISTER · LOGIN · SEND — client UDP dùng socket dùng chung cho mỗi phiên");
+        JLabel school = Theme.label(Theme.SCHOOL);
+        school.setFont(Theme.LABEL);
+        school.setForeground(Theme.INK_3);
+        names.add(school);
+        names.add(javax.swing.Box.createVerticalStrut(2));
+
+        String subText = "REGISTER · LOGIN · SEND — client UDP dùng socket dùng chung cho mỗi phiên";
+        String warn = LogoAssets.warning();
+        if (warn != null) {
+            subText = subText + " · " + warn;
+        }
+
+        JLabel sub = Theme.label(subText);
         sub.setForeground(Theme.INK_3);
         names.add(sub);
+
+        left.add(names, BorderLayout.CENTER);
 
         JPanel dotBox = new JPanel(new BorderLayout());
         dotBox.setOpaque(false);
@@ -281,7 +309,7 @@ public class MailClientFrame extends JFrame {
         holder.add(statusText, BorderLayout.CENTER);
         dotBox.add(holder, BorderLayout.CENTER);
 
-        head.add(names, BorderLayout.WEST);
+        head.add(left, BorderLayout.WEST);
         head.add(dotBox, BorderLayout.EAST);
         return head;
     }

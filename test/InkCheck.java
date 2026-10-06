@@ -71,6 +71,8 @@ public class InkCheck {
         fillInitial(box[0]);
         Thread.sleep(400);
 
+        checkLogo(box[0]);
+
         if (login) {
             int port = 24601;
             MailServer server = GuiHelper.startServer(port, "/tmp/ink_data");
@@ -178,6 +180,59 @@ public class InkCheck {
         return checked;
     }
 
+    /**
+     * Logo phai co that trong khung, dung kich thuoc, va that su ve duoc pixel.
+     *
+     * <p>Khong co ham nay thi thieu {@code assets/vku-logo.png} van cho InkCheck
+     * bao xanh: khung bo trong logo, {@code describe} tra {@code null} cho nhan
+     * rong nen khong component nao bi dem, va anh khong ve thi dau co bien loi de
+     * bao. Day la dang "test xanh gia" ma chinh InkCheck sinh ra de chong.
+     */
+    static void checkLogo(javax.swing.JFrame frame) throws Exception {
+        System.out.println("--- logo truong ---");
+        if (LogoAssets.master() == null) {
+            System.out.println("  !! khong nap duoc " + LogoAssets.FILE
+                    + " — can chay ./test/run.sh hoac cp -r assets build/");
+            problems++;
+            return;
+        }
+
+        final List<Component> all = new ArrayList<>();
+        SwingUtilities.invokeAndWait(() ->
+                GuiHelper.collect(frame.getContentPane(), all));
+
+        JLabel logo = null;
+        for (Component c : all) {
+            if (c instanceof JLabel l && l.getIcon() != null) {
+                logo = l;
+                break;
+            }
+        }
+        if (logo == null) {
+            System.out.println("  !! khung khong co nhan logo nao");
+            problems++;
+            return;
+        }
+
+        int ih = logo.getIcon().getIconHeight();
+        if (ih != Theme.LOGO_H) {
+            System.out.println("  !! chieu cao logo " + ih
+                    + "px, mong doi " + Theme.LOGO_H + "px");
+            problems++;
+            return;
+        }
+
+        int ink = countInteriorInk(logo);
+        if (ink < 12) {
+            System.out.println("  !! logo " + ink
+                    + " pixel — CHI BI TO MAU, ANH KHONG HIEN");
+            problems++;
+            return;
+        }
+        System.out.printf("  ok logo %dx%d, %d pixel mau%n",
+                logo.getIcon().getIconWidth(), ih, ink);
+    }
+
     /** Dien san cac truong o client; server frame khong co truong nen bo qua. */
     static void fillInitial(javax.swing.JFrame f) throws Exception {
         SwingUtilities.invokeAndWait(() -> {
@@ -251,6 +306,10 @@ public class InkCheck {
         }
         if (c instanceof JLabel l) {
             String t = strip(l.getText());
+            if (t.isEmpty() && l.getIcon() != null) {
+                return "logo truong (" + l.getIcon().getIconWidth() + "x"
+                        + l.getIcon().getIconHeight() + ")";
+            }
             return t.isEmpty() ? null : "nhan \"" + trunc(t) + "\"";
         }
         if (c instanceof javax.swing.JTextField f) {

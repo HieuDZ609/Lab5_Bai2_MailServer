@@ -1934,6 +1934,80 @@ của `SEND` không xác thực, chấp nhận được trong phạm vi bài. B�
 khi thêm một chức năng *ghi dữ liệu mới*, phải hỏi nó ghi vào đâu và ai được phép ghi, chứ không
 chỉ "ghi thêm cho tiện".
 
+### 3.7.8 Đưa ảnh vào giao diện Swing: `javac` không copy tài nguyên
+
+Thêm logo trường vào header hai cửa sổ là một thay đổi nhỏ về mặt giao diện, nhưng lộ ra
+một cái bẫy build đáng nhớ: **`javac` chỉ biên dịch `.java` thành `.class`, không bao giờ copy
+tài nguyên**.
+
+Vì vậy câu lệnh mà `README.md` vốn ghi —
+
+```bash
+javac -encoding UTF-8 -d build src/*.java
+```
+
+— chạy hoàn toàn đúng, **không báo lỗi**, class nằm đúng chỗ… nhưng `getResourceAsStream()`
+vẫn trả `null` vì `assets/` không có trong `build/`. Đây là loại lỗi đáng sợ nhất: **build
+thành công, test xanh, chỉ là giao diện thiếu một thứ mà không ai để ý**. Nếu chạy bằng
+`java -cp build` từ thư mục dự án thì lại *thấy* được ảnh qua đường dẫn tương đối — nên
+người phát triển thấy logo hiện, còn người khác dùng đúng hướng dẫn thì không.
+
+Bài học rút ra có hai vế, và vế thứ hai mới là điểm chính:
+
+**Vế 1 — xử lý build.** Phải có bước copy tài nguyên vào classpath, và phải nằm trong **mọi**
+đường chạy chứ không chỉ script kiểm thử:
+
+```bash
+mkdir -p build/assets && cp assets/*.png build/assets/
+```
+
+Và loader nên **dự phòng bằng đường dẫn file**, không chỉ dựa vào classpath, để chạy tay vẫn
+chạy được:
+
+```java
+// 1. classpath
+InputStream in = LogoAssets.class.getResourceAsStream("/assets/vku-logo.png");
+// 2. dự phòng: thư mục chứa class, thư mục cha, thư mục làm việc
+```
+
+**Vế 2 — quan trọng hơn nhiều: một kiểm thử có thể "xanh giả".**
+
+`InkCheck` vốn được viết để bắt lỗi *"chữ không hiện dù kích thước đúng"* (§3.6.8). Nhưng nó
+duyệt component bằng `describe()`, và hàm này trả `null` cho mọi `JLabel` không có chữ:
+
+```java
+if (c instanceof JLabel l) {
+    String t = strip(l.getText());
+    return t.isEmpty() ? null : "nhan \"" + trunc(t) + "\"";   // ← nhãn chỉ có ảnh: null
+}
+```
+
+Logo là một `JLabel` **không có chữ**. Nên nó bị bỏ qua, không component nào được đếm pixel,
+và khi mất file ảnh thì `InkCheck` vẫn in ra *"mọi chữ đều thực sự hiện trên màn hình"* và trả
+exit code 0. **Bộ test sinh ra để chống lỗi hình ảnh lại không nhìn thấy lỗi hình ảnh.**
+
+Cách sửa phải xuất phát từ câu hỏi: *"component nào có thể không vẽ ra gì cả mà vẫn lọt qua
+bộ lọc của tôi?"* — chứ không phải thêm một assertion tuỳ ý:
+
+```java
+if (c instanceof JLabel l) {
+    String t = strip(l.getText());
+    if (t.isEmpty() && l.getIcon() != null) {          // nhãn chỉ có ảnh
+        return "logo truong (" + l.getIcon().getIconWidth() + "x"
+                + l.getIcon().getIconHeight() + ")";
+    }
+    return t.isEmpty() ? null : "nhan \"" + trunc(t) + "\"";
+}
+```
+
+Kèm một kiểm tra tường minh `checkLogo()`: ảnh phải nạp được, nhãn phải tồn tại, chiều cao phải
+đúng `Theme.LOGO_H`, và phải vẽ ra tối thiểu 12 pixel màu. Kiểm chứng lại bằng cách chạy
+`InkCheck` trong một thư mục không có `assets/` — phải báo lỗi và trả exit code khác 0.
+
+Nguyên tắc chung: **mọi thứ mà `describe()` / bộ lọc bỏ qua, đều là chỗ có thể hỏng mà test
+vẫn im lặng.** Khi thêm một loại component mới vào giao diện, phải hỏi bộ lọc có nhìn thấy nó
+không — và nếu không nhìn thấy thì đó là lỗi của bộ test, không phải "ngoài phạm vi kiểm thử".
+
 ---
 
 # PHẦN 4 — TỔNG HỢP

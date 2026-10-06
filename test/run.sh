@@ -33,6 +33,9 @@ echo "Build sach..."
 rm -rf "$BUILD" "$TESTBUILD"
 mkdir -p "$BUILD" "$TESTBUILD"
 "$JAVAC" -encoding UTF-8 -d "$BUILD" src/*.java || exit 1
+# Anh logo nam trong classpath nen phai copy vao build/ cung class.
+# Thieu buoc nay thi LogoAssets.master() tra null va logo bien mat khi chay.
+mkdir -p "$BUILD/assets" && cp assets/*.png "$BUILD/assets/" || exit 1
 "$JAVAC" -encoding UTF-8 -cp "$BUILD" -d "$TESTBUILD" test/*.java || exit 1
 echo "  $(ls "$BUILD"/*.class | wc -l) class san pham, $(ls "$TESTBUILD"/*.class | wc -l) class kiem thu"
 echo
