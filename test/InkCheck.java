@@ -89,8 +89,7 @@ public class InkCheck {
                 // Nap san noi dung tab Doc thu de kiem tra ca vung nhay.
                 SwingUtilities.invokeAndWait(() -> {
                     GuiHelper.setLabel(box[0], "readFileName", "mail_0001.txt");
-                    GuiHelper.setLabel(box[0], "readFrom", "hung01@mailserver.local");
-                    GuiHelper.setLabel(box[0], "readTo", "hung01@mailserver.local");
+                    GuiHelper.setLabel(box[0], "readFrom", "hung01");
                     GuiHelper.setLabel(box[0], "readSubject", "Chu de thu");
                     GuiHelper.setLabel(box[0], "readDate", "Sun, 04 Oct 2026 21:14:02 +0700");
                     GuiHelper.setLabel(box[0], "readSenderIp", "172.16.0.252");

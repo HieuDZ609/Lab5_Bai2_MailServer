@@ -31,10 +31,12 @@ import java.util.regex.Pattern;
  *   data/
  *   |-- accounts.dat            &lt;-- "user:hash SHA-256:thoi gian tao"
  *   |-- alice/
+ *   |   |-- account             &lt;-- ten dang nhap / mat khau / thoi gian tao
  *   |   |-- new_email.txt       &lt;-- mail chao mung (tao 1 lan luc dang ky)
  *   |   |-- mail_0001.txt       &lt;-- email thu 1
  *   |   `-- mail_0002.txt       &lt;-- email thu 2
  *   `-- bob/
+ *       |-- account
  *       |-- new_email.txt
  *       `-- mail_0001.txt
  * </pre>
@@ -49,6 +51,16 @@ public class Mailbox {
 
     /** Ten file chua danh sach tai khoan + mat khau da bam. */
     private static final String ACCOUNTS_FILE = "accounts.dat";
+
+    /**
+     * Ten file thong tin tai khoan nam <b>trong chinh thu muc hop thu</b>:
+     * {@code data/<user>/account} ghi ten dang nhap, mat khau va thoi gian tao.
+     *
+     * <p><b>Khong phai file thu:</b> file nay khong duoc liet ke trong
+     * {@code LOGIN}/{@code LIST} va bi {@link #readMail} tu choi doc, neu khong
+     * ai cung biet ten tai khoan la doc duoc mat khau qua {@code FETCH}.
+     */
+    public static final String ACCOUNT_INFO_FILE = "account";
 
     /** Ten file mail chao mung, dinh nghia chinh xac theo de bai. */
     public static final String WELCOME_FILE = "new_email.txt";
@@ -101,14 +113,12 @@ public class Mailbox {
         return null;
     }
 
-    /** Ten domain cua he thong mail. */
-    private static final String DOMAIN = "mailserver.local";
-
-    /** Dia chi email cua he thong, dung trong header From cua mail chao mung. */
-    private static final String SYSTEM_ADDRESS = "system@" + DOMAIN;
-
-    /** Hau to dia chi email cua nguoi dung. */
-    public static final String DEFAULT_DOMAIN = "@" + DOMAIN;
+    /**
+     * Nguoi gui trong mail chao mung: khong phai mot tai khoan nen chi ghi
+     * {@code system}, khong dia chi {@code @domain} — dinh dang From/To cua
+     * file thu la <b>ten dang nhap thuan</b>.
+     */
+    private static final String SYSTEM_SENDER = "system";
 
     /** Noi dung mail chao mung - dung nguyen van de bai. */
     private static final String WELCOME_BODY =
@@ -181,7 +191,8 @@ public class Mailbox {
 
     /**
      * Tao tai khoan moi: tao thu muc rieng + file {@code new_email.txt} noi dung
-     * chao mung. Day la <b>yeu cau 1</b> cua de bai.
+     * chao mung + file {@code account} ghi ten dang nhap, mat khau, thoi gian
+     * tao. Day la <b>yeu cau 1</b> cua de bai.
      *
      * @param username ten tai khoan
      * @param password mat khau
@@ -206,6 +217,10 @@ public class Mailbox {
             return Protocol.error(Protocol.CONFLICT, "Tai khoan '" + username + "' da ton tai");
         }
 
+        // Mot moc thoi gian duy nhat cho ca file account va accounts.dat, de hai
+        // file khong ghi hai lan "gio hien tai" va lech nhau vai milli giay.
+        LocalDateTime createdAt = LocalDateTime.now();
+
         try {
             // createDirectory la thao tac nguyen tu: neu thu muc da ton tai (do
             // client khac vua tao) thi nem FileAlreadyExistsException. Phe dinh
@@ -215,18 +230,63 @@ public class Mailbox {
             // ngay tu luc dang ky, khong phai doi den lan gui thu dau tien moi co.
             Files.createDirectory(folderDirOf(username, FOLDER_SENT));
 
-            // File mail chao mung - dinh nghia chinh xac theo de bai.
-            String welcome = buildMailFile(SYSTEM_ADDRESS, username + DEFAULT_DOMAIN,
-                    "Welcome to our mail service", WELCOME_BODY);
+            // File mail chao mung - dinh nghia chinh xac theo de bai. Nguoi gui la
+            // he thong, nen dong Sender-IP ghi IP cua may chu.
+            String welcome = buildMailFile(SYSTEM_SENDER,
+                    "Welcome to our mail service", WELCOME_BODY, serverIp());
             Files.writeString(mailbox.resolve(WELCOME_FILE), welcome, StandardCharsets.UTF_8);
 
-            savePassword(username, password);
+            // File thong tin tai khoan trong thu muc cua chinh tai khoan.
+            writeAccountInfo(mailbox, username, password, createdAt);
+
+            savePassword(username, password, createdAt);
             return Protocol.ok("Account '" + username + "' created");
         } catch (FileAlreadyExistsException e) {
             return Protocol.error(Protocol.CONFLICT, "Tai khoan '" + username + "' da ton tai");
         } catch (IOException e) {
             return Protocol.error(Protocol.SERVER_ERROR, "Khong tao duoc thu muc: " + e.getMessage());
         }
+    }
+
+    /**
+     * Ghi file {@code account} trong thu muc hop thu: ten dang nhap, mat khau,
+     * thoi gian tao.
+     *
+     * <p><b>Mat khau ro:</b> yeu cau bai tap yeu cau file nay ghi mat khau de doc
+     * duoc, nen khac voi {@code accounts.dat} (chi luu hash SHA-256). Day la du lieu
+     * doc cho bai tap tren may rieng — xem ghi chu o {@link #ACCOUNT_INFO_FILE}.
+     *
+     * <p>Ghi vao file tam roi {@code move} cung nguyen tac voi cac file thu, de
+     * khong bao gio co file thong tin bi ghi nua dong neu may dut giua chung.
+     *
+     * @param mailbox   thu muc hop thu da tao
+     * @param username  ten dang nhap
+     * @param password  mat khau (ro)
+     * @param createdAt thoi diem tao (dung chung mot moc voi accounts.dat)
+     */
+    private static void writeAccountInfo(Path mailbox, String username, String password,
+                                         LocalDateTime createdAt) throws IOException {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Username: ").append(username).append(Protocol.NEWLINE);
+        sb.append("Password: ").append(oneLine(password)).append(Protocol.NEWLINE);
+        sb.append("Created: ").append(createdAt.format(CREATED_FMT)).append(Protocol.NEWLINE);
+
+        Path temp = mailbox.resolve(ACCOUNT_INFO_FILE + ".tmp");
+        Files.writeString(temp, sb.toString(), StandardCharsets.UTF_8);
+        Files.move(temp, mailbox.resolve(ACCOUNT_INFO_FILE),
+                StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    /**
+     * Goi mot chuoi ve mot dong: bo het xuong dong.
+     *
+     * <p>Mat khau den tu client qua giao thuc, va {@link Protocol#unescape} co the
+     * tra lai {@code \n}. Neu ghi nguyen vao file thi mat khau se thanh nhieu dong,
+     * pha hong cau truc 3 dong cua file account.
+     */
+    private static String oneLine(String s) {
+        if (s == null) return "";
+        return s.replace("\r", "").replace("\n", "");
     }
 
     /**
@@ -244,11 +304,14 @@ public class Mailbox {
      * <p>Dong ghi co 3 truong: {@code user:hash:thoiGianTao}. Khong luu mat khau
      * dang ro de tang an toan - khi dang nhap se so sanh bang hash cua mat khau
      * moi nhap.
+     *
+     * @param createdAt moc thoi gian tao dung chung voi {@code account}
      */
-    private void savePassword(String username, String password) throws IOException {
+    private void savePassword(String username, String password, LocalDateTime createdAt)
+            throws IOException {
         String hash = sha256(password);
         String line = username + ":" + hash + ":"
-                + LocalDateTime.now().format(CREATED_FMT);
+                + createdAt.format(CREATED_FMT);
         synchronized (accountsLock) {
             Files.writeString(accountsFile(), line + Protocol.NEWLINE, StandardCharsets.UTF_8,
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND);
@@ -359,11 +422,12 @@ public class Mailbox {
     // ==================== YEU CAU 2: GUI EMAIL ====================
 
     /**
-     * Giao mot email vao hop thu cua tai khoan nhan: xac dinh tai khoan nhan tu
-     * truong {@code To:}, roi tao file chua noi dung email trong thu muc do.
+     * Giao mot email vao hop thu cua tai khoan nhan: lay ten tai khoan nhan tu
+     * tham so {@code to} cua lenh {@code SEND} (file thu khong con dong
+     * {@code To}), roi tao file chua noi dung email trong thu muc do.
      * Day la <b>yeu cau 2</b> cua de bai.
      *
-     * @param from    dia chi nguoi gui
+     * @param from    ten nguoi gui
      * @param to      ten tai khoan nhan
      * @param subject tieu de
      * @param body    noi dung
@@ -399,8 +463,7 @@ public class Mailbox {
 
         try {
             String fileName = nextMailFileName(mailbox);
-            String content = buildMailFile(from + DEFAULT_DOMAIN, to + DEFAULT_DOMAIN,
-                    subject, body, senderIp);
+            String content = buildMailFile(from, subject, body, senderIp);
             // Ghi ra file tam roi doi ten sang file chinh -> tranh file hoac khong doc duoc.
             Path temp = mailbox.resolve(fileName + ".tmp");
             Path target = mailbox.resolve(fileName);
@@ -410,7 +473,7 @@ public class Mailbox {
             // Luu them MOT ban gui vao hop thu "sent" cua nguoi gui, de nguoi gui
             // xem lai duoc thu minh vua gui. Khong doi response: client tu tim ban
             // gui bang lenh LIST|user|sent o vong poll tiep theo.
-            saveSentCopy(from, to, subject, body, senderIp);
+            saveSentCopy(from, subject, body, senderIp);
 
             return Protocol.ok("Delivered to '" + to + "' as file " + fileName);
         } catch (FileAlreadyExistsException e) {
@@ -445,7 +508,7 @@ public class Mailbox {
      *
      * @return {@code true} neu ghi ban gui thanh cong
      */
-    private boolean saveSentCopy(String from, String to, String subject,
+    private boolean saveSentCopy(String from, String subject,
                                  String body, String senderIp) {
         // KHONG cap nhat ma: lenh SEND khong xac thuc nguoi gui, "from" chi la
         // chuoi client tu khai. Neu khong kiem tra tai khoan co that su khong,
@@ -456,8 +519,7 @@ public class Mailbox {
         try {
             Path sentDir = folderDirOf(from, FOLDER_SENT);
             Files.createDirectories(sentDir);
-            String content = buildMailFile(from + DEFAULT_DOMAIN, to + DEFAULT_DOMAIN,
-                    subject, body, senderIp);
+            String content = buildMailFile(from, subject, body, senderIp);
             writeSentWithFinalName(sentDir, content);
             return true;
         } catch (IOException e) {
@@ -562,7 +624,11 @@ public class Mailbox {
     }
 
     /**
-     * Liet ke ten tat ca file trong thu muc hop thu.
+     * Liet ke ten tat ca file <b>la thu</b> trong thu muc hop thu.
+     *
+     * <p>Bo qua file tam ({@code *.tmp}, {@code .pending.txt}) va file thong tin
+     * tai khoan {@link #ACCOUNT_INFO_FILE} — hai loai nay khong phai thu, neu liet
+     * ke vao thi client se hien chung trong danh sach hop thu.
      *
      * @param mailbox thu muc can xem
      * @return danh sach ten file, sap xep de co thu tu on dinh
@@ -574,8 +640,10 @@ public class Mailbox {
                 // Bo file tam: ghi atomic se tao file phu tam trong chinh thu muc
                 // hop thu. Neu liet ke ca no, client co the thay ".pending.txt" nhu
                 // mot thu moi, va "khong doi gi" co the bien doi gi.
-                if (Files.isRegularFile(p) && !isTempName(p.getFileName().toString())) {
-                    names.add(p.getFileName().toString());
+                String name = p.getFileName().toString();
+                if (Files.isRegularFile(p) && !isTempName(name)
+                        && !ACCOUNT_INFO_FILE.equals(name)) {
+                    names.add(name);
                 }
             }
             Collections.sort(names);
@@ -859,6 +927,12 @@ public class Mailbox {
                 || fileName.contains("\\")) {
             return null;
         }
+        // File thong tin tai khoan chua mat khau ro: khong phai thu, khong duoc
+        // doc qua FETCH. Neu khong chan o day, ai biet ten tai khoan cung lay
+        // duoc mat khau bang viec goi FETCH|<user>|account.
+        if (ACCOUNT_INFO_FILE.equals(fileName)) {
+            return null;
+        }
         try {
             return Files.readString(folderDirOf(username, folder).resolve(fileName),
                     StandardCharsets.UTF_8);
@@ -867,58 +941,71 @@ public class Mailbox {
         }
     }
 
-    // ==================== DINH DANG EMAIL THEO RFC 5322 ====================
+    // ==================== DINH DANG FILE THU ====================
 
     /**
-     * Dung noi dung 1 file email day du theo chuan RFC 5322 (Internet Message Format):
-     * cac truong header, mot dong trong, roi den phan body.
+     * Dung noi dung 1 file email: cac dong header, mot dong trong, roi den body.
      *
-     * @param from    dia chi nguoi gui
-     * @param to      dia chi nguoi nhan
+     * <p>Thu tu theo yeu cau: {@code From} -> {@code Date} -> {@code Subject}
+     * -> (co {@code Sender-IP} thi ghi sau) -> dong trong -> noi dung.
+     *
+     * <p><b>Khong co dong {@code To}:</b> file khong ghi nguoi nhan — chi co
+     * {@code From} (ten nguoi gui), khong hau to {@code @mailserver.local}.
+     * Noi dung khong co nhan {@code Content}, chi nam ngay duoi dong trong.
+     *
+     * @param from    ten nguoi gui
      * @param subject tieu de
      * @param body    noi dung
      * @return noi dung file email
      */
-    public static String buildMailFile(String from, String to, String subject, String body) {
-        return buildMailFile(from, to, subject, body, null);
+    public static String buildMailFile(String from, String subject, String body) {
+        return buildMailFile(from, subject, body, null);
     }
 
     /**
-     * Ban co ghi {@code Sender-IP} — dung khi thu do do chinh may may chu tao ra.
+     * Ban co ghi {@code Sender-IP} — dung khi biet IP may gui.
      *
-     * @param senderIp dia chi IP may gui, hoac {@code null} de khong ghi (vi du thu
-     *                 chao mung do may chu tu sinh)
+     * <p>Chi ghi khi co IP: thu cu khong biet IP van parse duoc (client hien
+     * nhan dang cuoc). Khong ghi To / Message-ID / MIME-Version / Content-Type —
+     * file chi giu cac truong can thiet cho bai tap.
+     *
+     * @param senderIp dia chi IP may gui, hoac {@code null} de khong ghi
      */
-    public static String buildMailFile(String from, String to, String subject, String body,
+    public static String buildMailFile(String from, String subject, String body,
                                        String senderIp) {
         StringBuilder sb = new StringBuilder();
         sb.append("From: ").append(from).append(Protocol.NEWLINE);
-        sb.append("To: ").append(to).append(Protocol.NEWLINE);
-        sb.append("Subject: ").append(subject).append(Protocol.NEWLINE);
         sb.append("Date: ").append(currentRfc5322Date()).append(Protocol.NEWLINE);
-        // Chi ghi khi biet IP: thu cu khong co dong nay (cu) van parse duoc.
+        sb.append("Subject: ").append(subject).append(Protocol.NEWLINE);
         if (senderIp != null && !senderIp.isBlank()) {
             sb.append("Sender-IP: ").append(senderIp).append(Protocol.NEWLINE);
         }
-        sb.append("Message-ID: <").append(messageId()).append('>').append(Protocol.NEWLINE);
-        sb.append("MIME-Version: 1.0").append(Protocol.NEWLINE);
-        sb.append("Content-Type: text/plain; charset=\"UTF-8\"").append(Protocol.NEWLINE);
         sb.append(Protocol.NEWLINE);           // dong trong phan cach header / body
         sb.append(body == null ? "" : body).append(Protocol.NEWLINE);
         return sb.toString();
     }
 
     /**
-     * Sinh Message-ID duy nhat theo dang <code>&lt;timestamp.sinh-van-toc@domain&gt;</code>.
-     * Dung Unix timestamp (giay) + so ngau nhien de tranh trung khi tao nhieu email
-     * trong cung mot giay.
+     * IP cua may chu, ghi vao {@code Sender-IP} cua mail chao mung.
      *
-     * @return chuoi dinh dang "1727957400.75348f"
+     * <p>Nguoi gui mail chao mung la he thong, nen lay IP cua may chu chu khong lay
+     * IP cua datagram {@code REGISTER}. Duyet dia chi IPv4 khong phai loopback dau
+     * tien cua may; neu khong co thi tra {@code 127.0.0.1}.
      */
-    private static String messageId() {
-        long epochSecond = System.currentTimeMillis() / 1000L;
-        int random = new java.util.Random().nextInt(0x100000);
-        return epochSecond + "." + Integer.toHexString(random) + "@" + DOMAIN;
+    private static String serverIp() {
+        try {
+            for (java.net.NetworkInterface ni
+                    : java.util.Collections.list(java.net.NetworkInterface.getNetworkInterfaces())) {
+                if (!ni.isUp() || ni.isLoopback()) continue;
+                java.util.Optional<java.net.InetAddress> first = ni.inetAddresses()
+                        .filter(a -> a instanceof java.net.Inet4Address && !a.isLoopbackAddress())
+                        .findFirst();
+                if (first.isPresent()) return first.get().getHostAddress();
+            }
+        } catch (Exception ignored) {
+            // Khong doc duoc danh sach interface: dung loopback.
+        }
+        return "127.0.0.1";
     }
 
     /**

@@ -174,7 +174,6 @@ public class MailClientFrame extends JFrame {
 
     private final JLabel readFileName = Theme.labelStrong("");
     private final JLabel readFrom = Theme.label("");
-    private final JLabel readTo = Theme.label("");
     private final JLabel readSenderIp = Theme.label("");
     private final JLabel readReceiverIp = Theme.label("");
     private final JLabel readSubject = Theme.label("");
@@ -825,7 +824,6 @@ public class MailClientFrame extends JFrame {
         int row = 1;
         g.gridwidth = 1;
         addHeaderRow(p, g, row++, "Từ", readFrom);
-        addHeaderRow(p, g, row++, "Đến", readTo);
         addHeaderRow(p, g, row++, "Tiêu đề", readSubject);
         addHeaderRow(p, g, row++, "Ngày", readDate);
         // Hai dong IP: server ghi "Sender-IP" luc giao thu, "Receiver-IP" luc thu
@@ -834,7 +832,7 @@ public class MailClientFrame extends JFrame {
         addHeaderRow(p, g, row++, "IP người nhận", readReceiverIp);
 
         // Cac gia tri header dung font mono de de doc dia chi va moc thoi gian
-        for (JLabel l : new JLabel[]{readFrom, readTo, readSubject, readDate,
+        for (JLabel l : new JLabel[]{readFrom, readSubject, readDate,
                 readSenderIp, readReceiverIp}) {
             l.setFont(Theme.MONO);
         }
@@ -905,7 +903,6 @@ public class MailClientFrame extends JFrame {
     private void clearReadView() {
         readFileName.setText("");
         readFrom.setText("");
-        readTo.setText("");
         readSubject.setText("");
         readDate.setText("");
         readSenderIp.setText("");
@@ -920,9 +917,8 @@ public class MailClientFrame extends JFrame {
      *
      * <p>Dinh dang ghi ra boi {@code Mailbox.buildMailFile()} la:
      * cac dong header, mot dong trong, roi den body. Cac dong header la
-     * {@code From:/To:/Subject:/Date:/Message-ID:/MIME-Version:/Content-Type:}.
-     * Dong {@code Content-Type} va {@code MIME-Version} khong can hien thi nen
-     * bo qua.
+     * {@code From:/Subject:/Date:/Sender-IP:} (va {@code Receiver-IP:} neu server
+     * da ghi luc thu duoc doc). Khong co dong {@code To}.
      *
      * @param raw noi dung file thu da giai ma
      * @return cac truong tach duoc
@@ -934,7 +930,7 @@ public class MailClientFrame extends JFrame {
         String body = split < 0 ? "" : text.substring(split + 2);
 
         // "(thu cu)" = file thu duoc tao boi phien ban truoc, khong co dong IP.
-        String from = "", to = "", subject = "", date = "";
+        String from = "", subject = "", date = "";
         String senderIp = OLD_MAIL_MARK, receiverIp = OLD_MAIL_MARK;
         for (String line : headerBlock.split("\n")) {
             int c = line.indexOf(':');
@@ -943,7 +939,6 @@ public class MailClientFrame extends JFrame {
             String value = line.substring(c + 1).trim();
             switch (key) {
                 case "From" -> from = value;
-                case "To" -> to = value;
                 case "Subject" -> subject = value;
                 case "Date" -> date = value;
                 case "Sender-IP" -> senderIp = value;
@@ -952,12 +947,12 @@ public class MailClientFrame extends JFrame {
             }
         }
         // Bo 1 dong trong cuoi body (buildMailFile() ghi them \n o cuoi)
-        return new MailView(from, to, subject, date, body.stripTrailing(),
+        return new MailView(from, subject, date, body.stripTrailing(),
                 senderIp, receiverIp);
     }
 
     /** Cac truong cua 1 thu sau khi tach. */
-    private record MailView(String from, String to, String subject, String date,
+    private record MailView(String from, String subject, String date,
             String body, String senderIp, String receiverIp) {
     }
 
@@ -1276,7 +1271,6 @@ public class MailClientFrame extends JFrame {
                         readFileName.setText(fileName);
                         readFolderLabel.setText(isInbox ? LABEL_INBOX : LABEL_SENT);
                         readFrom.setText(v.from());
-                        readTo.setText(v.to());
                         readSubject.setText(v.subject());
                         readDate.setText(v.date());
                         readSenderIp.setText(v.senderIp());

@@ -16,7 +16,7 @@ hỗ trợ 3 chức năng — tạo tài khoản, gửi email, đăng nhập và
 
 | # | Yêu cầu | Cách hiện thực |
 |---|---|---|
-| 1 | Tạo tài khoản mới, sinh file `new_email.txt` chào mừng | `REGISTER` → `data/<user>/new_email.txt` |
+| 1 | Tạo tài khoản mới, sinh file `new_email.txt` chào mừng | `REGISTER` → `data/<user>/new_email.txt` + `data/<user>/account` (tên đăng nhập, mật khẩu, thời gian tạo) |
 | 2 | Gửi email, lưu thành **mỗi email một file** | `SEND` → `mail_XXXX.txt` trong thư mục người nhận |
 | 3 | Đăng nhập và trả về **danh sách tên file** email | `LOGIN` → `mail_0001.txt~mail_0002.txt~new_email.txt` |
 
@@ -154,7 +154,7 @@ Sau khi đăng nhập thì cả 5 tab và thẻ `Hộp thư` mới hiện, đồ
 | **Đăng ký** | Tên tài khoản (3–32 ký tự: `a-z`, `A-Z`, `0-9`, `_`) + mật khẩu | `200` tạo tài khoản kèm thư chào mừng; `409` nếu tên đã tồn tại |
 | **Đăng nhập** | Tên tài khoản + mật khẩu | `200` kèm danh sách tệp thư, điền sẵn ô *Người gửi*; `401` nếu sai mật khẩu |
 | **Gửi thư** | Người nhận, tiêu đề, nội dung (nhiều dòng) | `200` kèm tên tệp vừa lưu; `404` nếu người nhận không tồn tại |
-| **Đọc thư** | Không cần nhập gì — bấm một tệp trong `Hộp thư` hoặc trong tab `Thư đã gửi` | Tự gọi `FETCH`, hiện header (`Từ` / `Đến` / `Tiêu đề` / `Ngày`) + nội dung; `404` nếu tệp không còn |
+| **Đọc thư** | Không cần nhập gì — bấm một tệp trong `Hộp thư` hoặc trong tab `Thư đã gửi` | Tự gọi `FETCH`, hiện header (`Từ` / `Tiêu đề` / `Ngày` / hai dòng IP) + nội dung; `404` nếu tệp không còn |
 | **Thư đã gửi** | Không cần nhập gì — xem/bấm một bản gửi của chính mình | Liệt kê mọi thư bạn đã gửi; bấm vào sẽ mở ở tab `Đọc thư` |
 
 Ô mật khẩu (tab **Đăng ký** và **Đăng nhập**) có **con mắt** ở bên phải:
@@ -200,7 +200,7 @@ Nhật ký trong cửa sổ **Mail Server**:
 [00:13:45] [10] ← 127.0.0.1:42648 LIST|bob
 [00:13:45] [10] → 127.0.0.1:42648 200|mail_0001.txt~new_email.txt
 [00:13:45] [11] ← 127.0.0.1:42648 FETCH|bob|mail_0001.txt
-[00:13:45] [11] → 127.0.0.1:42648 200|From: alice@mailserver.local<BR>...
+[00:13:45] [11] → 127.0.0.1:42648 200|From: alice<BR>...
 ```
 
 > Hai cặp `[10]` và `[11]` ở trên là **poll nền và lúc bấm xem thư** — chúng xuất hiện
@@ -288,11 +288,13 @@ Sau khi đăng ký `alice`, `bob` và gửi 3 email:
 data/
 ├── accounts.dat                 # "user:hash SHA-256:thời điểm tạo"
 ├── alice/
+│   ├── account                  # Username / Password / Created (tạo lúc REGISTER)
 │   ├── new_email.txt            # file chào mừng (tạo lúc REGISTER)
 │   ├── mail_0001.txt            # email bob gửi cho alice
 │   └── sent/                    # hộp thư đã gửi (tạo lúc REGISTER)
 │       └── mail_0001.txt        # bản gửi của alice
 └── bob/
+    ├── account
     ├── new_email.txt
     ├── mail_0001.txt
     ├── mail_0002.txt
@@ -304,25 +306,48 @@ data/
 > Tài khoản tạo từ trước khi có tính năng này thì thiếu thư mục này — `LIST|<user>|sent`
 > trả về danh sách rong thay vì báo lỗi, và thư mục được tạo khi gửi tệp đầu tiên.
 
-Nội dung một file email (đúng chuẩn RFC 5322):
+`account` nằm ngay trong thư mục của tài khoản, nội dung 3 dòng:
 
 ```
-From: alice@mailserver.local
-To: bob@mailserver.local
-Subject: Bai tap Lab 5
+Username: alice
+Password: matkhau123
+Created: 2026-10-06 14:48:55
+```
+
+> File này **không phải là thư**: không xuất hiện trong danh sách `LOGIN`/`LIST`,
+> và `FETCH|<user>|account` trả `400` — nếu không chặn, ai biết tên tài khoản
+> cũng lấy được mật khẩu qua `FETCH`.
+> `Created` dùng **cùng một mốc thời gian** với cột thứ ba trong `accounts.dat`.
+> Tài khoản tạo trước khi có file này thì không được tạo bù (mật khẩu đã bị băm,
+> không còn dạng rõ để ghi lại).
+
+Nội dung một file email:
+
+```
+From: alice
 Date: Sun, 04 Oct 2026 00:13:45 +0700
-Message-ID: <1791047625.b415d@mailserver.local>
-MIME-Version: 1.0
-Content-Type: text/plain; charset="UTF-8"
+Subject: Bai tap Lab 5
+Sender-IP: 127.0.0.1
 
 Xin chao Bob! Day la email dau tien Alice gui.
 ```
+
+> Thứ tự: **tên người gửi** → **thời gian gửi** → **tiêu đề** → (nếu biết) **IP người
+> gửi** → dòng trống → **nội dung**. File **không có dòng `To:`** (không ghi người nhận)
+> và cũng không có `Message-ID` / `MIME-Version` / `Content-Type`.
+> Tên người gửi là **tên đăng nhập thuần** (`From: alice`), không kèm `@mailserver.local`.
+> `Sender-IP` lấy trực tiếp từ datagram `SEND`; thư do máy chủ sinh (chào mừng) ghi
+> **IP của máy chủ**. Khi thư được **đọc** lần đầu, server ghi thêm `Receiver-IP` vào
+> cuối phần header (ngay dưới `Sender-IP`).
 
 > Thư mục `data/` nằm **trong thư mục dự án**, không nằm cạnh các file `.java` —
 > `MailServer.DEFAULT_DATA_DIR` trỏ tới đường dẫn tuyệt đối đó và `MailServerFrame`
 > lấy từ hằng số này.
 >
-> `accounts.dat` lưu **hash SHA-256**, không lưu mật khẩu rõ.
+> `accounts.dat` lưu **hash SHA-256**, không lưu mật khẩu rõ — dùng để **đăng nhập**.
+> Riêng `account` trong thư mục tài khoản ghi **mật khẩu rõ** theo yêu cầu của
+> đề bài (file chỉ đọc được khi mở trực tiếp trên máy chủ; qua giao thức thì
+> `FETCH` đã chặn).
 > Mỗi dòng có dạng `tên:hash:yyyy-MM-dd HH:mm:ss` — cột cuối là **thời điểm
 > tài khoản được tạo**, máy chủ in lại trong nhật ký lúc `REGISTER` và khi
 > khởi động. Tài khoản tạo từ trước khi có cột này (2 trường) vẫn đăng nhập
@@ -379,24 +404,23 @@ RESPONSE:  <STATUS>|<message>\r\n
 ### 8.4. Định dạng file thư trên đĩa
 
 ```
-From: <nguồn@mailserver.local>
-To: <đích@mailserver.local>
-Subject: ...
+From: <tên người gửi>            ← tên đăng nhập thuần, không @domain
 Date: Mon, 05 Oct 2026 16:08:06 +0700
+Subject: ...
 Sender-IP: 172.16.0.252          ← máy chủ lấy từ datagram SEND, ghi lúc giao thư
-Message-ID: <...>
-MIME-Version: 1.0
-Content-Type: text/plain; charset="UTF-8"
 Receiver-IP: 192.168.1.55        ← máy chủ ghi ở lần ĐỌC ĐẦU TIÊN của thư
 
 <nội dung thư>
 ```
 
+Không có dòng `To:` — file không ghi người nhận; phần nội dung nằm ngay dưới dòng
+trống, không có nhãn `Content`.
+
 Hai dòng IP phục vụ thống kê vận hành (xem [§10.2](#102-ip-người-gửi--ip-người-nhận)):
 
 | Dòng | Ghi khi nào | Ghi tối đa |
 |---|---|---|
-| `Sender-IP` | Lúc nhận `SEND` — máy chủ biết chính xác IP người gửi từ `DatagramPacket` | 1 lần, không đổi |
+| `Sender-IP` | Lúc nhận `SEND` — IP người gửi lấy từ `DatagramPacket`; thư chào mừng do máy chủ sinh thì ghi **IP máy chủ** | 1 lần, không đổi |
 | `Receiver-IP` | Lúc `FETCH` **lần đầu** — IP người nhận chỉ biết được khi thư bị đọc | 1 lần, không đổi |
 
 > **Vì sao `Receiver-IP` ghi lúc đọc chứ không lúc gửi:** khi máy chủ giao thư cho
@@ -404,8 +428,8 @@ Hai dòng IP phục vụ thống kê vận hành (xem [§10.2](#102-ip-người-
 > cùng đăng nhập `hung01` thì đều là người nhận hợp lệ. Nên "người nhận" ở đây được hiểu là
 > **máy đã đọc thư lần đầu**, và dòng này **không ghi đè** khi thư được mở lần sau.
 
-Thư tạo sẵn từ trước khi có tính năng này (kể cả `new_email.txt` do máy chủ tự sinh) sẽ
-**không có** hai dòng trên; GUI hiện `(thư cũ)` thay vì bị bỏ trống.
+Thư tạo trước khi có phần mở rộng IP sẽ **không có** hai dòng trên; GUI hiện `(thư cũ)`
+thay vì bị bỏ trống (còn thư chào mừng mới tạo thì **có** `Sender-IP` của máy chủ).
 
 ### 8.5. Cảnh báo bảo mật của phần mở rộng
 
@@ -451,9 +475,10 @@ mật khẩu, `LOGIN` trả về token có hạn, và `accounts.dat` đổi sang
 | `LIST` tài khoản không tồn tại | `404` |
 | `FETCH` tệp không tồn tại | `404` |
 | `FETCH` có `..` hoặc `/` trong tên tệp | `400`, **không đọc được file ngoài thư mục thư** |
+| `FETCH` tệp `account` (file thông tin tài khoản) | `400`, **không đọc được mật khẩu** |
 | Nội dung thư có `<BR>` / `\|` | `FETCH` trả về **xuống dòng thật**, `\|` giữ nguyên |
 | Client B đang đăng nhập, client A gửi thư cho B | Tệp mới tự xuất hiện ở B trong 1–2 giây, không cần bấm làm mới |
-| Bấm tệp trong `Hộp thư` | Sang tab `Đọc thư`, đúng `Từ`/`Đến`/`Tiêu đề`/`Ngày`/nội dung |
+| Bấm tệp trong `Hộp thư` | Sang tab `Đọc thư`, đúng `Từ`/`Tiêu đề`/`Ngày`/IP/nội dung |
 | `Đăng xuất` | Ẩn `Hộp thư` + `Gửi thư` + `Đọc thư` + `Thư đã gửi`, dừng poll, quay về tab `Đăng nhập` |
 | Bấm `Gửi thư` khi chưa đăng nhập | Báo lỗi **ở tab `Gửi thư`**, không lẫn sang tab `Đăng ký` |
 | Tài khoản có thư mục nhưng mất dòng hash trong `accounts.dat` | `401` — không bỏ qua xác thực |
@@ -680,7 +705,7 @@ Tab **Đọc thư** có thêm hai dòng, lấy từ header của file thư:
 
 | Dòng hiển thị | Nguồn |
 |---|---|
-| IP người gửi | `Sender-IP` — máy chủ ghi lúc giao thư, biết từ IP của datagram `SEND` |
+| IP người gửi | `Sender-IP` — máy chủ ghi lúc giao thư (biết từ datagram `SEND`); thư chào mừng ghi IP máy chủ |
 | IP người nhận | `Receiver-IP` — máy chủ ghi ở lần đọc đầu tiên |
 
 Muốn xem trên mạng thật, chạy server ở một máy và client ở máy khác cùng Wi-Fi (xem

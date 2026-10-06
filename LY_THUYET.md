@@ -1734,10 +1734,10 @@ File thư sau khi gửi và sau khi đọc lần đầu:
 
 ```
 From: minh@mailserver.local
-To: hung@mailserver.local
-Subject: Bao cao tuan 5
-Date: Mon, 05 Oct 2026 16:08:06 +0700
 Sender-IP: 172.16.0.252
+Date: Mon, 05 Oct 2026 16:08:06 +0700
+Subject: Bao cao tuan 5
+To: hung@mailserver.local
 Message-ID: <1791191286.cfe5a@mailserver.local>
 MIME-Version: 1.0
 Content-Type: text/plain; charset="UTF-8"

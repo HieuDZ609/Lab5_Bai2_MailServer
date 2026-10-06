@@ -8,31 +8,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-/**
- * MailClient.java - MAY KHACH UDP cua chuong trinh Mail Server.
- *
- * <p>Vai tro (theo mo hinh client/server):
- * <ul>
- *   <li>Chay tren may khach, <b>noi truoc</b> (active).</li>
- *   <li>Khong can ket noi - chi gui datagram den dia chi may chu.</li>
- *   <li>Mo vai tro client: tao account, dang nhap, gui email.</li>
- * </ul>
- *
- * <p>Quy trinh tao UDP socket cua client:
- * {@code socket() -> sendto() -> recvfrom() -> close()}
- * Client KHONG goi {@code bind()} cong co dinh - he dieu hanh tu cap cong ngau nhien.
- *
- * <p>Vi UDP khong dam bao tin cay, client luong dat timeout. Neu may chu khong
- * phan hoi sau {@link #TIMEOUT_MS} thi bao loi thay vi treo vo han.
- *
- * <p><b>LUU Y QUAN TRONG:</b> client dung <b>mot</b> socket cho ca chuong trinh
- * va khong co khoa. Vi vay chi duoc gui <b>mot request tai mot thoi diem</b> — neu
- * gui hai request chong nhau, response cua hai lenh se bi hoan doi. Lop GUI
- * {@link MailClientFrame} co trach nham khoa cac nut bam trong luc cho phan hoi.
- *
- * <p>Lop nay khong con man hinh console: giao dien nam trong {@link MailClientFrame},
- * con {@link #register}, {@link #login}, {@link #send}, {@link #logout} la API cho GUI goi.
- */
 public class MailClient {
 
     /** Dia chi may chu mac dinh. */

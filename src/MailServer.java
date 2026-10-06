@@ -15,75 +15,26 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
-/**
- * MailServer.java - MAY CHU UDP cua chuong trinh Mail Server.
- *
- * <p>Vai tro (theo mo hinh client/server):
- * <ul>
- *   <li>Chay tren may chu, <b>khong phai noi ai</b> (passive).</li>
- *   <li>Lang nghe co dinh tren mot cong (mac dinh 2346).</li>
- *   <li>Nhan request tu client, xu ly, gui response ve lai DUNG DIA CHI
- *       IP + PORT cua nguoi gui (lay tu chinh DatagramPacket vua nhan).</li>
- * </ul>
- *
- * <p>Quy trinh tao UDP socket cua server:
- * {@code socket() -> bind() -> recvfrom() -> sendto() -> close()}
- *
- * <p>Xu ly dong thoi: mot thread "listener" chi nham method {@code receive()},
- * day khung tin sang mot thread pool de xu ly. Cach nay tranh viec mot client
- * gui mail dai se lam nghe trong tat ca client khac.
- */
 public class MailServer {
 
-    /** Cong mac dinh cua mail server. */
     public static final int DEFAULT_PORT = 2346;
-
-    /**
-     * Thu muc goc luu du lieu mac dinh: thu muc con {@code data/} nam trong thu muc
-     * du an.
-     *
-     * <p>Dung duong dan tuyet doi de du lieu luon nam dung choi du an, khong phu
-     * thuoc vao thu muc dang chay tien trinh (neu mo terminal o noi khac thi
-     * {@code data/} se bi tao nham o do).
-     *
-     * <p>Day la <b>nguon duy nhat</b> cua duong dan nay: {@link MailServerFrame}
-     * doc tu day de hien thi o o "Thu muc du lieu", tranh truong hop hai noi
-     * khai bao hai duong dan khac nhau.
-     */
     public static final String DEFAULT_DATA_DIR =
             "/mnt/Nigga/Hoc_Tap/LTM/Lab5_Bai2_MailServer/data";
 
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
 
-    /** Dinh dang thoi diem tao tai khoan, in ra nhật ký. */
+ 
     private static final DateTimeFormatter DATETIME_FMT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    /**
-     * Chu ky gom dong log cua vong poll.
-     *
-     * <p>Client poll {@code LIST} moi 1 giay, nen log tung dong se in 2 dong
-     * ({@code ←} + {@code →}) cho moi giay — sau 10 phut la 1200 dong chi de
-     * noi "van con song". Voi 5 client con dung thi nhieu hon nua.
-     */
     private static final long POLL_LOG_INTERVAL_MS = 30_000;
 
-    /** Do dai toi da cho 1 dong log, truoc khi cat bang dau "…". */
     private static final int LOG_MAX_CHARS = 120;
 
-    /**
-     * Bat/tat in chi tiet tung request cua vong poll.
-     *
-     * <p>Mac dinh {@code false}: poll duoc gom lai theo chu ky {@link #POLL_LOG_INTERVAL_MS}.
-     * Bat len bang {@code -Dmail.verbosePoll=true} khi can soi tung request (vd dang
-     * nhap van mot request nao do len khong doi), bat lai ngay khi xong.
-     */
+    
     private static final boolean VERBOSE_POLL = Boolean.getBoolean("mail.verbosePoll");
 
-    /**
-     * So {@code LIST} da bo qua tinh tu lan in gan nhat, va danh sach tai khoan
-     * dang duoc poll. Chi dung de in dong tong hop theo chu ky.
-     */
+   
     private final java.util.Map<String, Integer> pollCounts = new java.util.concurrent.ConcurrentHashMap<>();
 
     private volatile long lastPollLogAt = 0;
@@ -91,10 +42,7 @@ public class MailServer {
     private final int port;
     private final Mailbox mailbox;
 
-    /**
-     * Noi nhan tin nhat ky. Mac dinh in ra console; GUI truyen vao mot lambda
-     * de day sang JTextArea (co bo dem de quy ve EDT).
-     */
+   
     private final Consumer<String> logSink;
 
     /**
@@ -124,12 +72,7 @@ public class MailServer {
         return "[" + LocalTime.now().format(TIME_FMT) + "] " + message;
     }
 
-    /**
-     * Chuyen epoch millis thanh chuoi ngay gio, de in trong nhật ký.
-     *
-     * <p>Tra "không rõ" khi khong co so lieu — tai khoan tao tu truoc khi
-     * tinh nang nay ra mat thi accounts.dat khong co cot thoi gian.
-     */
+   
     private static String createdText(long epochMillis) {
         if (epochMillis < 0) {
             return "không rõ";
@@ -156,14 +99,7 @@ public class MailServer {
         return lastError;
     }
 
-    // ==================== CHAY SERVER ====================
-
-    /**
-     * Bat dau vong lap lang nghe trong mot thread rieng.
-     *
-     * @return {@code true} neu bind thanh cong va server dang chay,
-     *         {@code false} neu khong bind duoc cong (da dong, sai dinh dang...)
-     */
+    
     public boolean start() {
         if (running) {
             return true;
@@ -177,7 +113,7 @@ public class MailServer {
             this.lastError = null;
             this.requestCounter.set(0);
             // Reset dong tong hop: neu khong, lan poll dau tien se in dong
-            // tong hop vi lastPollLogAt con la 0.
+        
             this.lastPollLogAt = System.currentTimeMillis();
             this.pollCounts.clear();
             this.workerPool = Executors.newFixedThreadPool(10, r -> {
@@ -480,6 +416,13 @@ public class MailServer {
         }
         if (fileName.isBlank() || fileName.contains("..") || fileName.contains("/")) {
             return Protocol.error(Protocol.BAD_REQUEST, "Ten file khong hop le");
+        }
+        // File thong tin tai khoan (ten dang nhap, mat khau, thoi gian tao) nam trong
+        // thu muc hop thu nhung khong phai thu. Chan o day truoc khi xuong Mailbox
+        // de thong bao ro, khong can cho den luc doc file that bai.
+        if (Mailbox.ACCOUNT_INFO_FILE.equals(fileName)) {
+            return Protocol.error(Protocol.BAD_REQUEST,
+                    "'" + fileName + "' la file thong tin tai khoan, khong phai thu");
         }
 
         // Ghi IP nguoi doc vao file thu (lan dau tien) va tra ve noi dung da cap

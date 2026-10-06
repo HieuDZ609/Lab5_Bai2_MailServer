@@ -58,11 +58,24 @@ public class E2E {
                 Files.exists(DATA.resolve("hung01/new_email.txt")));
         check("REGISTER sinh thu muc rieng", true,
                 Files.isDirectory(DATA.resolve("hung01")));
+        // File thong tin tai khoan nam ngay trong thu muc cua tai khoan.
+        check("REGISTER sinh file account", true,
+                Files.exists(DATA.resolve("hung01/account")));
+        String accInfo = Files.readString(DATA.resolve("hung01/account"));
+        check("account ghi ten dang nhap", true,
+                accInfo.contains("Username: hung01"));
+        check("account ghi mat khau", true,
+                accInfo.contains("Password: matkhau123"));
+        check("account ghi thoi gian tao", true,
+                accInfo.contains("Created: "));
+        check("account dung 3 dong", 3, accInfo.split("\n", -1).length - 1);
         check("LOGIN sai mat khau -> 401", "401", a.login("hung01", "sai")[0]);
         check("LOGIN tai khoan khong ton tai -> 404", "404", a.login("khongco", "x")[0]);
         check("LOGIN dung mat khau -> 200", "200", a.login("hung01", "matkhau123")[0]);
         check("LOGIN tra danh sach ten file", true,
                 a.getCurrentMailList().contains("new_email.txt"));
+        check("account khong xuat hien trong hop thu den", false,
+                a.getCurrentMailList().contains("account"));
 
         section("B. LIST");
         check("LIST -> 200", "200", a.list("hung01")[0]);
@@ -76,9 +89,11 @@ public class E2E {
         check("FETCH new_email.txt -> 200", "200", f1[0]);
         check("FETCH tra ve header Subject:", true, f1[1].contains("Subject:"));
         check("FETCH tra ve header From:", true,
-                f1[1].contains("From: system@mailserver.local"));
-        check("FETCH tra ve header To:", true,
-                f1[1].contains("To: hung01@mailserver.local"));
+                f1[1].contains("From: system"));
+        // Dinh dang file khong con dong To: (khong ghi nguoi nhan trong file).
+        check("File thu khong co dong To", false, f1[1].contains("To:"));
+        check("File thu khong con hau to @domain", false,
+                f1[1].contains("mailserver.local"));
         check("FETCH tra ve header Date:", true, f1[1].contains("Date: "));
         check("FETCH file khong ton tai -> 404", "404",
                 a.fetch("hung01", "khong_co.txt")[0]);
@@ -88,6 +103,11 @@ public class E2E {
                 a.fetch("hung01", "/etc/passwd")[0]);
         check("FETCH tai khoan khong ton tai -> 404", "404",
                 a.fetch("khongco", "new_email.txt")[0]);
+        // File chua mat khau khong duoc doc qua FETCH.
+        check("FETCH account bi chan -> 400", "400",
+                a.fetch("hung01", "account")[0]);
+        check("FETCH account khong lo mat khau", false,
+                a.fetch("hung01", "account")[1].contains("matkhau123"));
 
         section("D. SEND + danh sach cap nhat");
         check("SEND cho chinh minh -> 200", "200",
@@ -188,8 +208,7 @@ public class E2E {
         String[] sf = minh.fetchSent("minh", "mail_0001.txt");
         check("FETCH|minh|sent|mail_0001.txt -> 200", "200", sf[0]);
         check("Ban gui giu dung tieu de", true, sf[1].contains("Subject: Bai tap 5"));
-        check("Ban gui giu dung nguoi nhan", true,
-                sf[1].contains("To: nhu@mailserver.local"));
+        check("Ban gui khong co dong To", false, sf[1].contains("To:"));
         check("Ban gui co Sender-IP", true, sf[1].contains("Sender-IP: "));
         // Ban ghi lai phia nguoi gui: chua co ai doc no theo nghia "den" thi
         // khong duoc gan IP nguoi nhan. Neu gan, client se hieu nham rang
@@ -405,13 +424,16 @@ public class E2E {
 
         MailClient probe = new MailClient("localhost", PORT);
 
-        // Thu do may chu tu tao (thu chao mung) khong co dong IP -> hien "(thu cu)"
-        // thay vi hien so 0.0.0.0 hay chu rong.
+        // Thu do may chu tao (thu chao mung) van co dong Sender-IP = IP may chu,
+        // nen client phai hien IP chu khong phai nhan "(thu cu)".
         selectMail(f, "new_email.txt");
-        check("Thu khong co IP: sang tab Doc thu", true,
+        check("Thu chao mung: sang tab Doc thu", true,
                 GuiHelper.waitUntil(() -> GuiHelper.currentTab(f) == 3, 5000));
-        check("Thu server tao: khong co Sender-IP -> hien '(thu cu)'", "(thư cũ)",
-                GuiHelper.text(f, "readSenderIp"));
+        check("Thu server tao: co Sender-IP", true,
+                GuiHelper.waitUntil(() ->
+                        !GuiHelper.text(f, "readSenderIp").isBlank(), 5000));
+        check("Thu server tao: Sender-IP khong phai nhan cu", false,
+                "(thư cũ)".equals(GuiHelper.text(f, "readSenderIp")));
         // Nguoc lai, IP nguoi nhan lai BIET: thu chao mung da duoc doc trong
         // chinh lan nay nen server da ghi Receiver-IP vao file.
         check("Thu server tao: da ghi Receiver-IP khi doc", true,
@@ -642,8 +664,8 @@ public class E2E {
                 GuiHelper.waitUntil(() -> GuiHelper.currentTab(f) == 3, 5000));
         check("Bam ban gui: hien dung tieu de", "Bai tap 5",
                 GuiHelper.text(f, "readSubject"));
-        check("Bam ban gui: hien dung nguoi nhan", true,
-                GuiHelper.text(f, "readTo").contains("banthan"));
+        check("Bam ban gui: hien dung nguoi gui", "nguoigui",
+                GuiHelper.text(f, "readFrom"));
         check("Bam ban gui: nhan hop thu la 'thu da gui'", "thư đã gửi",
                 GuiHelper.text(f, "readFolderLabel"));
         check("Bam ban gui: co Sender-IP", true,
