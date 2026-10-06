@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -28,7 +29,7 @@ import java.util.regex.Pattern;
  *
  * <pre>
  *   data/
- *   |-- accounts.dat            &lt;-- luu mat khau da bam SHA-256
+ *   |-- accounts.dat            &lt;-- "user:hash SHA-256:thoi gian tao"
  *   |-- alice/
  *   |   |-- new_email.txt       &lt;-- mail chao mung (tao 1 lan luc dang ky)
  *   |   |-- mail_0001.txt       &lt;-- email thu 1
@@ -229,14 +230,25 @@ public class Mailbox {
     }
 
     /**
+     * Dinh dang thoi diem tao tai khoan ghi trong accounts.dat.
+     *
+     * <p>Ghi dang chuoi doc duoc (khong phai epoch) de ai mo file ra cung thay
+     * ngay -- theo yeu cau "accounts.dat hien thi thoi gian tao".
+     */
+    private static final DateTimeFormatter CREATED_FMT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    /**
      * Luu mat khau da bam SHA-256 vao accounts.dat.
      *
-     * <p>Khong luu mat khau dang ro de tang an toan - khi dang nhap se so sanh bang
-     * hash cua mat khau moi nhap.
+     * <p>Dong ghi co 3 truong: {@code user:hash:thoiGianTao}. Khong luu mat khau
+     * dang ro de tang an toan - khi dang nhap se so sanh bang hash cua mat khau
+     * moi nhap.
      */
     private void savePassword(String username, String password) throws IOException {
         String hash = sha256(password);
-        String line = username + ":" + hash;
+        String line = username + ":" + hash + ":"
+                + LocalDateTime.now().format(CREATED_FMT);
         synchronized (accountsLock) {
             Files.writeString(accountsFile(), line + Protocol.NEWLINE, StandardCharsets.UTF_8,
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND);
@@ -249,6 +261,26 @@ public class Mailbox {
      * @param username ten tai khoan
      * @return chuoi hex hash, hoac null neu tai khoan chua duoc luu mat khau
      */
+    private String loadPassword(String username) {
+        Path file = accountsFile();
+        if (!Files.exists(file)) {
+            return null;
+        }
+        try {
+            List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
+            // Duyet nguoc: dong moi ghi de dong cuoi cung ten tai khoan
+            for (int i = lines.size() - 1; i >= 0; i--) {
+                String[] parts = lines.get(i).split(":", 3);
+                if (parts.length >= 2 && parts[0].equals(username)) {
+                    return parts[1];
+                }
+            }
+        } catch (IOException e) {
+            return null;
+        }
+        return null;
+    }
+
     /**
      * Tai khoan co that su khong: co thu muc hop thu <b>va</b> co dong hash mat khau.
      *
@@ -262,24 +294,41 @@ public class Mailbox {
         return accountExists(username) && loadPassword(username) != null;
     }
 
-    private String loadPassword(String username) {
+    /**
+     * Thoi diem tai khoan duoc tao (epoch millis), doc tu dong accounts.dat.
+     *
+     * <p>Tai khoan tao TU TRUOC khi tinh nang nay ra mat (dong chi co 2 truong)
+     * hoac dong hash bi mat thi tra ve -1, de code goi biet khong co so lieu.
+     *
+     * @param username ten tai khoan
+     * @return epoch millis, hoac {@code -1L} neu khong biet
+     */
+    public long accountCreatedAt(String username) {
         Path file = accountsFile();
         if (!Files.exists(file)) {
-            return null;
+            return -1L;
         }
         try {
             List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
-            // Duyet nguoc: dong moi ghi de dong cuoi cung ten tai khoan
             for (int i = lines.size() - 1; i >= 0; i--) {
-                String[] parts = lines.get(i).split(":", 2);
-                if (parts.length == 2 && parts[0].equals(username)) {
-                    return parts[1];
+                String[] parts = lines.get(i).split(":", 3);
+                if (parts.length >= 2 && parts[0].equals(username)) {
+                    if (parts.length < 3) {
+                        return -1L;
+                    }
+                    try {
+                        return LocalDateTime.parse(parts[2], CREATED_FMT)
+                                .atZone(ZoneId.systemDefault())
+                                .toInstant().toEpochMilli();
+                    } catch (DateTimeParseException e) {
+                        return -1L;
+                    }
                 }
             }
         } catch (IOException e) {
-            return null;
+            return -1L;
         }
-        return null;
+        return -1L;
     }
 
     private Path accountsFile() {

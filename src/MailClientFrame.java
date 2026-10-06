@@ -64,8 +64,10 @@ public class MailClientFrame extends JFrame {
     private final JTextField portField = Theme.field();
     private final JTextField regUserField = Theme.field();
     private final JPasswordField regPassField = Theme.passwordField();
+    private final JComponent regPassRow = Theme.passwordRow(regPassField, true);
     private final JTextField logUserField = Theme.field();
     private final JPasswordField logPassField = Theme.passwordField();
+    private final JComponent logPassRow = Theme.passwordRow(logPassField, true);
     private final JTextField fromField = Theme.field();
     private final JTextField toField = Theme.field();
     private final JTextField subjectField = Theme.field();
@@ -609,7 +611,7 @@ public class MailClientFrame extends JFrame {
         JPanel p = tabPanel();
         int row = 0;
         addRow(p, row++, "Tên đăng nhập", regUserField);
-        addRow(p, row++, "Mật khẩu", regPassField);
+        addRow(p, row++, "Mật khẩu", regPassRow);
         addHint(p, row++,
                 "Chỉ chữ và số, 3–32 ký tự. Mật khẩu tối đa 64 ký tự.");
 
@@ -627,7 +629,7 @@ public class MailClientFrame extends JFrame {
         JPanel p = tabPanel();
         int row = 0;
         addRow(p, row++, "Tên đăng nhập", logUserField);
-        addRow(p, row++, "Mật khẩu", logPassField);
+        addRow(p, row++, "Mật khẩu", logPassRow);
         addHint(p, row++,
                 "Đăng nhập sẽ lấy danh sách thư trong hộp thư từ máy chủ.");
 

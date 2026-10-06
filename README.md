@@ -157,6 +157,10 @@ Sau khi đăng nhập thì cả 5 tab và thẻ `Hộp thư` mới hiện, đồ
 | **Đọc thư** | Không cần nhập gì — bấm một tệp trong `Hộp thư` hoặc trong tab `Thư đã gửi` | Tự gọi `FETCH`, hiện header (`Từ` / `Đến` / `Tiêu đề` / `Ngày`) + nội dung; `404` nếu tệp không còn |
 | **Thư đã gửi** | Không cần nhập gì — xem/bấm một bản gửi của chính mình | Liệt kê mọi thư bạn đã gửi; bấm vào sẽ mở ở tab `Đọc thư` |
 
+Ô mật khẩu (tab **Đăng ký** và **Đăng nhập**) có **con mắt** ở bên phải:
+mặc định **hiện nguyên mật khẩu khi gõ**, bấm con mắt để ẩn thành dấu chấm
+(con mắt bị gạch chéo nghĩa là đang ở chế độ hiện — bấm để ẩn).
+
 Vùng kết quả dưới mỗi tab hiện mã trạng thái kèm thông điệp của máy chủ:
 xanh lá là thành công, đỏ là lỗi.
 
@@ -282,7 +286,7 @@ Sau khi đăng ký `alice`, `bob` và gửi 3 email:
 
 ```
 data/
-├── accounts.dat                 # lưu hash SHA-256 mật khẩu
+├── accounts.dat                 # "user:hash SHA-256:thời điểm tạo"
 ├── alice/
 │   ├── new_email.txt            # file chào mừng (tạo lúc REGISTER)
 │   ├── mail_0001.txt            # email bob gửi cho alice
@@ -319,6 +323,10 @@ Xin chao Bob! Day la email dau tien Alice gui.
 > lấy từ hằng số này.
 >
 > `accounts.dat` lưu **hash SHA-256**, không lưu mật khẩu rõ.
+> Mỗi dòng có dạng `tên:hash:yyyy-MM-dd HH:mm:ss` — cột cuối là **thời điểm
+> tài khoản được tạo**, máy chủ in lại trong nhật ký lúc `REGISTER` và khi
+> khởi động. Tài khoản tạo từ trước khi có cột này (2 trường) vẫn đăng nhập
+> được bình thường, chỉ hiển thị *"không rõ"*.
 > Đây là mức tối thiểu cho bài tập — bài thực tế cần PBKDF2/bcrypt/Argon2 kèm salt
 > (xem §3.4.3 trong `LY_THUYET.md`).
 
@@ -542,8 +550,9 @@ mới kiểm được các tab vốn bị ẩn.
 > pixel. Nếu chỉ quét một lần ở tab mặc định thì các tab khác không component nào
 > đang hiện ⇒ không được kiểm gì, và một tab hỏng vẫn ra kết quả "xanh".
 
-Kết quả: `InkCheck` xanh ở 16/16 component của server, 98 component của client trước đăng
-nhập và 252 component sau đăng nhập (đã gồm cả tab `Thư đã gửi` và logo trường trong header);
+Kết quả: `InkCheck` xanh ở 16/16 component của server, 102 component của client trước đăng
+nhập và 260 component sau đăng nhập (đã gồm cả tab `Thư đã gửi`, logo trường và 2 nút
+**con mắt** trong header/ô mật khẩu);
 `GeoCheck` xanh ở `1000x640`, `1100x700`, `1180x740`, `1280x820`, cả trước và sau đăng nhập.
 
 Header có logo nên cao thêm, vì vậy cũng đã kiểm thủ công hai kích thước nhỏ nhất mà

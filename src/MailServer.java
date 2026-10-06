@@ -4,7 +4,9 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -52,6 +54,10 @@ public class MailServer {
             "/mnt/Nigga/Hoc_Tap/LTM/Lab5_Bai2_MailServer/data";
 
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
+
+    /** Dinh dang thoi diem tao tai khoan, in ra nhật ký. */
+    private static final DateTimeFormatter DATETIME_FMT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     /**
      * Chu ky gom dong log cua vong poll.
@@ -118,6 +124,21 @@ public class MailServer {
         return "[" + LocalTime.now().format(TIME_FMT) + "] " + message;
     }
 
+    /**
+     * Chuyen epoch millis thanh chuoi ngay gio, de in trong nhật ký.
+     *
+     * <p>Tra "không rõ" khi khong co so lieu — tai khoan tao tu truoc khi
+     * tinh nang nay ra mat thi accounts.dat khong co cot thoi gian.
+     */
+    private static String createdText(long epochMillis) {
+        if (epochMillis < 0) {
+            return "không rõ";
+        }
+        return Instant.ofEpochMilli(epochMillis)
+                .atZone(ZoneId.systemDefault())
+                .format(DATETIME_FMT);
+    }
+
     public int getPort() {
         return port;
     }
@@ -174,8 +195,21 @@ public class MailServer {
         log("Đang lắng nghe trên cổng " + port);
         log("Thư mục dữ liệu: " + mailbox.getDataDir());
         List<String> accounts = mailbox.listAccounts();
-        log("Số tài khoản đã tồn tại: " + accounts.size()
-                + (accounts.isEmpty() ? "" : " (" + String.join(", ", accounts) + ")"));
+        if (accounts.isEmpty()) {
+            log("Số tài khoản đã tồn tại: 0");
+        } else {
+            StringBuilder line = new StringBuilder("Số tài khoản đã tồn tại: ")
+                    .append(accounts.size()).append(" — ");
+            for (int i = 0; i < accounts.size(); i++) {
+                if (i > 0) line.append(", ");
+                String u = accounts.get(i);
+                line.append(u)
+                        .append(" (tạo ")
+                        .append(createdText(mailbox.accountCreatedAt(u)))
+                        .append(')');
+            }
+            log(line.toString());
+        }
 
         // Thread rieng cho vong lap, de GUI van con phan hoi su kien
         Thread listener = new Thread(() -> listenLoop(socket), "mail-listener");
@@ -350,7 +384,13 @@ public class MailServer {
             return Protocol.error(Protocol.BAD_REQUEST,
                     "Cu phap: REGISTER|username|password");
         }
-        return mailbox.createAccount(fields.get(1), fields.get(2));
+        String username = fields.get(1);
+        String response = mailbox.createAccount(username, fields.get(2));
+        if (Protocol.isOk(response)) {
+            log("✔ Tài khoản '" + username + "' được tạo lúc "
+                    + createdText(mailbox.accountCreatedAt(username)));
+        }
+        return response;
     }
 
     /**

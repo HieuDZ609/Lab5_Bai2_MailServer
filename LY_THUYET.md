@@ -2008,6 +2008,11 @@ Nguyên tắc chung: **mọi thứ mà `describe()` / bộ lọc bỏ qua, đề
 vẫn im lặng.** Khi thêm một loại component mới vào giao diện, phải hỏi bộ lọc có nhìn thấy nó
 không — và nếu không nhìn thấy thì đó là lỗi của bộ test, không phải "ngoài phạm vi kiểm thử".
 
+Nguyên tắc này được áp dụng tiếp ngay trong bài: khi thêm **nút con mắt** (đổi hiện/ẩn mật
+khẩu) — một nút *chỉ có icon, không có chữ* — mình đã thêm nhánh mới vào `describe()` cho
+`AbstractButton` có icon, nên nút này cũng được đếm pixel chứ không rơi vào đúng lỗi cũ.
+Mật khẩu mặc định hiện rõ khi gõ (theo yêu cầu), bấm con mắt thì ẩn thành dấu chấm.
+
 ---
 
 # PHẦN 4 — TỔNG HỢP

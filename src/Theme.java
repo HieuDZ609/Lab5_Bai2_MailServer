@@ -1,4 +1,5 @@
 import java.awt.BasicStroke;
+import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Cursor;
@@ -15,14 +16,18 @@ import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.geom.Ellipse2D;
+import java.awt.geom.Line2D;
 import java.awt.geom.RoundRectangle2D;
 import java.util.HashSet;
 import java.util.Set;
 import javax.swing.BorderFactory;
 import javax.swing.AbstractAction;
 import javax.swing.ActionMap;
+import javax.swing.Icon;
 import javax.swing.ImageIcon;
 import javax.swing.InputMap;
+import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.KeyStroke;
 import javax.swing.JLabel;
@@ -342,6 +347,9 @@ public final class Theme {
      * trong bộ đệm của mọi tiến trình trên máy.
      */
     static class RoundedPasswordField extends JPasswordField {
+
+        private boolean inRow;
+
         RoundedPasswordField() {
             setFont(BODY);
             setForeground(INK);
@@ -351,9 +359,20 @@ public final class Theme {
             setBorder(new FocusBorder(LINE_STRONG, R_SMALL));
         }
 
+        /** Chuyen sang che do "noi trong" {@code PasswordRow}: row ve nen bo goc
+         *  va vien, field chi con chu. Bỏ border de khong bi vien doi. */
+        void setInRow(boolean value) {
+            this.inRow = value;
+            setBorder(value ? null : new FocusBorder(LINE_STRONG, R_SMALL));
+            revalidate();
+            repaint();
+        }
+
         @Override
         protected void paintComponent(Graphics g) {
-            paintRoundedFill(g, getWidth(), getHeight());
+            if (!inRow) {
+                paintRoundedFill(g, getWidth(), getHeight());
+            }
             super.paintComponent(g);
         }
     }
@@ -381,6 +400,124 @@ public final class Theme {
 
     public static JPasswordField passwordField() {
         return new RoundedPasswordField();
+    }
+
+    /**
+     * Icon con mat tu ve cho nut cua {@link PasswordRow}.
+     *
+     * <p>Ve bang Graphics thay vi emoji de khong phu thuoc font cua may khac:
+     * "mat thuong" ngu y co the bam de HIEN mat khau, "mat gach cheo" ngu y
+     * co the bam de AN.
+     */
+    static class EyeIcon implements Icon {
+
+        private final boolean slash;
+
+        EyeIcon(boolean slash) {
+            this.slash = slash;
+        }
+
+        @Override
+        public int getIconWidth() {
+            return 22;
+        }
+
+        @Override
+        public int getIconHeight() {
+            return 22;
+        }
+
+        @Override
+        public void paintIcon(Component c, Graphics g, int x, int y) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                    RenderingHints.VALUE_ANTIALIAS_ON);
+            Color col = (c instanceof JButton b && b.getModel().isRollover())
+                    ? ACCENT : INK_3;
+            g2.setColor(col);
+            float w = 18f, h = 10f;
+            float ox = x + (getIconWidth() - w) / 2f;
+            float oy = y + (getIconHeight() - h) / 2f;
+            g2.setStroke(new BasicStroke(1.6f));
+            g2.draw(new Ellipse2D.Float(ox, oy, w, h));
+            float pr = 3f;
+            float cx = ox + w / 2f;
+            float cy = oy + h / 2f;
+            g2.fill(new Ellipse2D.Float(cx - pr, cy - pr, pr * 2f, pr * 2f));
+            if (slash) {
+                g2.setStroke(new BasicStroke(2.2f));
+                g2.draw(new Line2D.Float(ox, oy + h, ox + w, oy));
+            }
+            g2.dispose();
+        }
+    }
+
+    /**
+     * O mat khau gom field + nut con mat, nhom thanh MOT o nhap theo dung nhip
+     * thiet ke (cung kieu {@link FocusBorder} voi {@link #field()}).
+     */
+    static class PasswordRow extends JPanel {
+
+        private final JPasswordField field;
+        private final JButton eye;
+        private boolean visible;
+
+        PasswordRow(JPasswordField field, boolean visible) {
+            super(new BorderLayout());
+            this.field = field;
+            this.visible = visible;
+            setOpaque(false);
+            setBorder(new FocusBorder(LINE_STRONG, R_SMALL));
+            applyEcho();
+
+            eye = new JButton(new EyeIcon(!visible));
+            eye.setFocusable(false);
+            eye.setOpaque(false);
+            eye.setContentAreaFilled(false);
+            eye.setBorderPainted(false);
+            eye.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            eye.setToolTipText("Hiện/Ẩn mật khẩu");
+            eye.addActionListener(e -> toggle());
+            eye.setPreferredSize(new Dimension(34, 26));
+
+            add(field, BorderLayout.CENTER);
+            add(eye, BorderLayout.EAST);
+        }
+
+        private void applyEcho() {
+            // Echo char = 0 nghia la khong co echo: Java hien dung chu da go.
+            field.setEchoChar(visible ? (char) 0 : '•');
+        }
+
+        private void toggle() {
+            visible = !visible;
+            applyEcho();
+            eye.setIcon(new EyeIcon(!visible));
+            eye.repaint();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            paintRoundedFill(g, getWidth(), getHeight());
+            super.paintComponent(g);
+        }
+    }
+
+    /**
+     * Goi o mat khau co con mat.
+     *
+     * <p>Yeu cau "go vao la THAY mat khau, khong bi an" nen mac dinh
+     * {@code visible = true} -- hien chu that, bam con mat de an danh dau cham.
+     * {@code field} duoc chuyen sang che do noi trong de row ve nhu mot o.
+     */
+    public static JComponent passwordRow(JPasswordField field, boolean visible) {
+        if (field instanceof RoundedPasswordField rpf) {
+            rpf.setInRow(true);
+        } else {
+            field.setOpaque(false);
+            field.setBorder(null);
+        }
+        return new PasswordRow(field, visible);
     }
 
     /**

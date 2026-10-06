@@ -300,6 +300,13 @@ public class InkCheck {
         if (c instanceof Theme.FlatButton b) {
             return "nut \"" + GuiHelper.buttonText(b) + "\"";
         }
+        // Nut con mat (doi hien/an mat khau): chi co icon, khong chu — phai dem
+        // pixel de xac nhan icon hien ra, khong bao gio de describe lai bo qua.
+        if (c instanceof javax.swing.AbstractButton b
+                && b.getIcon() != null && strip(b.getText()).isEmpty()) {
+            return "nut con mat (icon " + b.getIcon().getIconWidth() + "x"
+                    + b.getIcon().getIconHeight() + ")";
+        }
         if (c instanceof javax.swing.JPasswordField p) {
             return "truong mat khau (" + p.getEchoChar() + "x"
                     + p.getPassword().length + ")";
